@@ -12,7 +12,24 @@ Le chargeur Rust produit un plan d’image contrôlé. Le worker de référence 
 | Traduction GPU organisée autour des ressources et files | Une zone mémoire peut changer de propriétaire ou héberger des vues différentes. | Tests d’alias, de première copie et d’attente inter-files avec contenu attendu. |
 | Upscaling et génération d’images après la présentation native | Les algorithmes temporels ont besoin de profondeur, mouvement, jitter, exposition et identifiant d’image cohérents. | Vérifier les discontinuités de caméra et isoler le HUD. Compter séparément les images rendues et générées. |
 
+## Ce que le matériel Series X et Series S impose au runtime
+
+| Matériel public | Series X | Series S |
+| --- | --- | --- |
+| CPU | 8 cœurs AMD Zen 2 | 8 cœurs AMD Zen 2 |
+| GPU | 52 unités de calcul RDNA 2 | 20 unités de calcul RDNA 2 |
+| GDDR6 | 16 Go, dont 10 à 560 Go/s et 6 à 336 Go/s | 10 Go, dont 8 à 224 Go/s et 2 à 56 Go/s |
+| Débit SSD annoncé | 2,4 Go/s bruts | 2,4 Go/s bruts |
+
+Les capacités ci-dessus sont celles de la console entière. Pour un exemple de jeu commercial, Massive décrit 7 cœurs utilisables et 14 threads matériels avec SMT sur les deux Series. Microsoft définit le réglage SMT dans la machine virtuelle de l’application, désactivé par défaut. Kelvaroq lit le manifeste de l’image pour choisir le profil. Les sept masques de cœur du modèle utilisent des numéros logiques adjacents. Une capture des enregistrements renvoyés sur une console permet de vérifier ce choix et de rejouer les informations de cache, de package et de NUMA. L’exemple SystemInfo de Microsoft affiche à la fois les cœurs de la machine et ceux accessibles au processus. [Fiche Series X](https://news.xbox.com/en-us/2020/03/16/xbox-series-x-tech/) · [Fiche Series S](https://www.xbox.com/en-us/consoles/xbox-series-s) · [Présentation GDC de Joshua Simmons](https://media.gdcvault.com/gdc2024/Slides/GDC%2Bslide%2Bpresentations/Simmons_Joshua_Upgrading_the_Snowdrop.pdf) · [Réglage SMT du GDK](https://learn.microsoft.com/en-us/gaming/gdk/docs/reference/system/microsoftgameconfig/elements/microsoftgameconfig-element-smtenabled?view=gdk-2510) · [SystemInfo](https://github.com/microsoft/Xbox-GDK-Samples/blob/main/Samples/System/SystemInfo/SystemInfo.cpp#L478-L539)
+
+Sur le PC de développement, les écritures du CPU arrivent en RAM et la RTX dispose de sa propre VRAM. Pour valider une texture, il faut pouvoir suivre un bloc du disque jusqu’au niveau de détail demandé, vérifier les octets après décompression et transfert, puis retrouver le descripteur que lit le shader. En cas de réutilisation d’une même plage mémoire, la fence doit permettre de distinguer la version encore en vol et celle que le dessin suivant attend. C’est le test qui reliera les observations sur les archives au problème de textures manquantes.
+
+Sur Series X, DirectStorage permet de hiérarchiser les requêtes d’E/S. Le circuit de décompression prend en charge LZ et BCPack, et le retour d’échantillonnage permet de charger des parties d’un mip effectivement utilisées. Les 4,8 Go/s annoncés supposent un taux de compression de deux pour un. Sur le contenu local, on a vérifié des flux zlib dans un échantillon de blocs. Le codec d’un autre bloc et l’usage du retour d’échantillonnage par le titre doivent être établis à partir de ses requêtes. [Présentation Xbox Velocity Architecture](https://news.xbox.com/en-us/2020/07/14/a-closer-look-at-xbox-velocity-architecture/)
+
 ## Enseignements du dépôt examiné
+
+La fiche PortWatch du 24 novembre 2026 identifie ce même fork. Elle attribue environ trois images par seconde à une démonstration de l’auteur sur RTX 4070 et indique que le chiffre est autodéclaré. Il manque un parcours, un profil CPU/GPU et une capture des ressources pour attribuer le ralentissement. [Données publiées par PortWatch](https://portwatch-vi.xyz/data/tracker.json)
 
 Le corpus local rassemble **153 PR**, du premier numéro présent au n° 216. L’instantané du code étudié est `2119b0e44c53aa9648307b0c5c73590290305b1f`. Le nombre de PR ne renseigne ni sur la qualité de l’équipe ni sur la cause d’une trame lente. Trois cas expliquent des choix précis de Kelvaroq.
 
@@ -51,6 +68,8 @@ L’adaptateur est sélectionné par nom. Une réussite exclusivement sur un ada
 | 5 | Évaluer DLSS, une voie disponible sur AMD et la génération d’images. | Points d’entrée optionnels sur le pipeline de présentation, comparaison du rendu natif et des modes temporels, vérification de la latence. |
 
 ### Mesure de la cadence
+
+La cible de qualification sur le PC de développement est 3840 × 2160 et 30 images rendues par seconde, génération d’images désactivée. Consigner pour chaque trame la résolution interne du jeu, celle du tampon présenté et le mode d’affichage Windows. Le bureau de test est en 3440 × 1440 à 144 Hz. La chaîne DXGI crée deux tampons 3840 × 2160 et vérifie leurs descripteurs GPU. Une image 4K affichée dans cette fenêtre est mise à l’échelle par Windows. La lecture des descripteurs ne mesure ni la résolution interne ni la durée d’une trame du jeu.
 
 30 images par seconde correspondent à **33,33 ms par image**. Pour chaque configuration, fixer la résolution, les options, le pilote et le parcours. Consigner au moins les temps médians, p95, p99, la proportion de trames au-delà du budget, le pire arrêt et le nombre d’images présentées. Mesurer aussi le fil CPU critique, la compilation des pipelines, les attentes inter-files et la charge GPU. Pour un passage jugé stable, publier la durée du passage et tous les dépassements. La première sonde hors écran fait une attente volontaire et une relecture à chaque image. Elle sert uniquement au contrôle du contenu.
 

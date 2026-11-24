@@ -5,6 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 use windows::{
+    Win32::Foundation::HWND,
     Win32::Graphics::{
         Direct3D::D3D_FEATURE_LEVEL_12_0,
         Direct3D12::*,
@@ -12,6 +13,80 @@ use windows::{
     },
     core::Interface,
 };
+
+pub const OUTPUT_WIDTH: u32 = 3840;
+pub const OUTPUT_HEIGHT: u32 = 2160;
+
+/// The swap chain owns a reference to its direct queue. Submission will begin
+/// when the guest supplies a display buffer.
+pub struct DisplaySurface {
+    _chain: IDXGISwapChain1,
+    pub adapter_name: String,
+}
+
+impl DisplaySurface {
+    pub fn open(window: HWND) -> Result<Self> {
+        // SAFETY: the window belongs to the UI thread and outlives this surface.
+        unsafe {
+            let factory: IDXGIFactory6 = CreateDXGIFactory1()?;
+            for index in 0.. {
+                let adapter: IDXGIAdapter1 = match factory
+                    .EnumAdapterByGpuPreference(index, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE)
+                {
+                    Ok(adapter) => adapter,
+                    Err(e) if e.code() == DXGI_ERROR_NOT_FOUND => break,
+                    Err(e) => return Err(e.into()),
+                };
+                let info = adapter.GetDesc1()?;
+                if info.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 != 0 {
+                    continue;
+                }
+                let mut device: Option<ID3D12Device> = None;
+                if D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_12_0, &mut device).is_err() {
+                    continue;
+                }
+                let device = device.context("D3D12 returned no device")?;
+                let queue: ID3D12CommandQueue =
+                    device.CreateCommandQueue(&D3D12_COMMAND_QUEUE_DESC::default())?;
+                let desc = DXGI_SWAP_CHAIN_DESC1 {
+                    Width: OUTPUT_WIDTH,
+                    Height: OUTPUT_HEIGHT,
+                    Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                    SampleDesc: DXGI_SAMPLE_DESC {
+                        Count: 1,
+                        Quality: 0,
+                    },
+                    BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
+                    BufferCount: 2,
+                    SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
+                    Scaling: DXGI_SCALING_STRETCH,
+                    AlphaMode: DXGI_ALPHA_MODE_IGNORE,
+                    ..Default::default()
+                };
+                let chain = factory.CreateSwapChainForHwnd(&queue, window, &desc, None, None)?;
+                for i in 0..desc.BufferCount {
+                    let buffer: ID3D12Resource = chain.GetBuffer(i)?;
+                    let actual = buffer.GetDesc();
+                    ensure!(
+                        actual.Width == u64::from(OUTPUT_WIDTH) && actual.Height == OUTPUT_HEIGHT,
+                        "dimensions DXGI inattendues"
+                    );
+                }
+                factory.MakeWindowAssociation(window, DXGI_MWA_NO_ALT_ENTER)?;
+                let length = info
+                    .Description
+                    .iter()
+                    .position(|&c| c == 0)
+                    .unwrap_or(info.Description.len());
+                return Ok(Self {
+                    _chain: chain,
+                    adapter_name: String::from_utf16_lossy(&info.Description[..length]),
+                });
+            }
+        }
+        bail!("aucun adaptateur matériel compatible Direct3D 12")
+    }
+}
 
 pub fn probe(selected: Option<u32>) -> Result<()> {
     // SAFETY: DXGI owns enumeration and all COM interfaces below are reference counted.

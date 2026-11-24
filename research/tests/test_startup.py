@@ -13,7 +13,7 @@ from pathlib import Path
 from unicorn import UC_ARCH_X86, UC_MODE_64, UC_PROT_READ, UC_PROT_WRITE, Uc
 from unicorn.x86_const import UC_X86_REG_R8, UC_X86_REG_RCX, UC_X86_REG_RDX
 
-from kelvaroq_reference.crt import fill_memory
+from kelvaroq_reference.crt import compare_strings, copy_memory, fill_memory
 from kelvaroq_reference.memory import GuestFault
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -137,6 +137,56 @@ class MemoryTests(unittest.TestCase):
         with self.assertRaises(GuestFault):
             fill_memory(self.cpu)
         self.assertEqual(bytes(self.cpu.mem_read(0x1FFC, 4)), bytes(4))
+
+    def test_string_comparison_preserves_case_and_unsigned_bytes(self):
+        self.cpu.mem_write(0x1FFE, b"A\0")
+        self.cpu.mem_write(0x2FFE, b"a\0")
+        self.assertEqual(compare_strings(self.cpu, 0x1FFE, 0x2FFE), (-32) & 0xFFFFFFFF)
+        self.assertEqual(
+            compare_strings(self.cpu, 0x1FFE, 0x2FFE, 2, ignore_case=True), 0
+        )
+        self.cpu.mem_write(0x1FFE, b"\xff\0")
+        self.assertEqual(compare_strings(self.cpu, 0x1FFE, 0x2FFE), 255 - 97)
+        self.assertEqual(compare_strings(self.cpu, 0x2FFF, 0x1FFF), 0)
+
+    def copy(self, destination, source, length):
+        self.cpu.reg_write(UC_X86_REG_RCX, destination)
+        self.cpu.reg_write(UC_X86_REG_RDX, source)
+        self.cpu.reg_write(UC_X86_REG_R8, length)
+        return copy_memory(self.cpu)
+
+    def test_copy_returns_destination_and_accepts_empty_ranges(self):
+        self.cpu.mem_write(0x2FF8, b"contents")
+        self.assertEqual(self.copy(0x1FF8, 0x2FF8, 8), 0x1FF8)
+        self.assertEqual(bytes(self.cpu.mem_read(0x1FF8, 8)), b"contents")
+        self.assertEqual(self.copy(0x1FF8, 0x1FF8, 8), 0x1FF8)
+        self.assertEqual(self.copy(2**64 - 1, 0, 0), 2**64 - 1)
+
+    def test_invalid_source_or_destination_leaves_prefix_unchanged(self):
+        self.cpu.mem_write(0x1FF8, b"original")
+        self.cpu.mem_write(0x2FF8, b"replaced")
+        for dst, src, count in (
+            (0x1FF8, 0x2FFC, 8),
+            (0x1FFC, 0x2FF8, 8),
+            (0x1FF8, 2**64 - 4, 8),
+        ):
+            with self.subTest(dst=dst, src=src):
+                with self.assertRaises(GuestFault):
+                    self.copy(dst, src, count)
+                self.assertEqual(bytes(self.cpu.mem_read(0x1FF8, 8)), b"original")
+
+    def test_copy_overlap_in_both_directions_across_chunks(self):
+        base = 0x4000
+        self.cpu.mem_map(base, 0x12000, UC_PROT_READ | UC_PROT_WRITE)
+        original = (bytes(range(251)) * 270)[:66015]
+        count = len(original) - 13
+        for dst, src in ((13, 0), (0, 13)):
+            with self.subTest(dst=dst):
+                self.cpu.mem_write(base, original)
+                expected = bytearray(original)
+                expected[dst : dst + count] = original[src : src + count]
+                self.assertEqual(self.copy(base + dst, base + src, count), base + dst)
+                self.assertEqual(self.cpu.mem_read(base, len(expected)), expected)
 
 
 if __name__ == "__main__":

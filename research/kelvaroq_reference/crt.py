@@ -1,8 +1,15 @@
 """Single-process CRT state and startup services."""
 
-from unicorn import UC_PROT_WRITE
-from unicorn.x86_const import UC_X86_REG_R8, UC_X86_REG_RCX, UC_X86_REG_RDX
+from unicorn import UC_PROT_READ, UC_PROT_WRITE
+from unicorn.x86_const import (
+    UC_X86_REG_MXCSR,
+    UC_X86_REG_R8,
+    UC_X86_REG_RCX,
+    UC_X86_REG_RDX,
+    UC_X86_REG_XMM0,
+)
 
+from .fma import tanf
 from .memory import DWORD, QWORD, GuestFault, check_access, read_guest, write_guest
 
 
@@ -19,6 +26,24 @@ def fill_memory(cpu):
     return dst
 
 
+def copy_memory(cpu):
+    dst = cpu.reg_read(UC_X86_REG_RCX)
+    src = cpu.reg_read(UC_X86_REG_RDX)
+    count = cpu.reg_read(UC_X86_REG_R8)
+    check_access(cpu, src, count, UC_PROT_READ)
+    check_access(cpu, dst, count, UC_PROT_WRITE)
+    if dst == src or not count:
+        return dst
+    # Offer memmove behavior for overlap. Each temporary holds at most 64 KiB.
+    backwards = src < dst < src + count
+    for copied in range(0, count, 65536):
+        width = min(65536, count - copied)
+        offset = count - copied - width if backwards else copied
+        data = bytes(cpu.mem_read(src + offset, width))
+        cpu.mem_write(dst + offset, data)
+    return dst
+
+
 def string_length(cpu, address):
     offset = 0
     while offset < 16 * 1024**2:
@@ -31,14 +56,18 @@ def string_length(cpu, address):
     raise GuestFault("string exceeds reference service limit")
 
 
-def compare_prefix(cpu, left, right, count):
-    # Narrow comparisons use the startup C locale. Stop at the first equal NUL.
-    for index in range(min(count, 16 * 1024**2)):
-        a = read_guest(cpu, left + index, 1).lower()[0]
-        b = read_guest(cpu, right + index, 1).lower()[0]
+def compare_strings(cpu, left, right, count=None, *, ignore_case=False):
+    # Compare unsigned bytes in the startup C locale. An equal NUL ends both strings.
+    limit = 16 * 1024**2
+    for index in range(min(count, limit) if count is not None else limit):
+        a = read_guest(cpu, left + index, 1)
+        b = read_guest(cpu, right + index, 1)
+        if ignore_case:
+            a, b = a.lower(), b.lower()
+        a, b = a[0], b[0]
         if a != b or not a:
             return (a - b) & 0xFFFFFFFF
-    if count > 16 * 1024**2:
+    if count is None or count > limit:
         raise GuestFault("string comparison exceeds reference service limit")
     return 0
 
@@ -51,6 +80,7 @@ class Crt:
         self.locale_mode = 2
         self.argv_mode = 0
         self.math_handler = 0
+        self.new_mode = 0
         self.narrow_environment = False
         self.onexit = {}
         self.exit_callbacks = []
@@ -70,14 +100,41 @@ class Crt:
     def invoke(self, cpu, name):
         arg = cpu.reg_read(UC_X86_REG_RCX)
         result = 0
+        if name == "tanf":
+            bits = cpu.reg_read(UC_X86_REG_XMM0) & 0xFFFFFFFF
+            state = tanf(bits, cpu.reg_read(UC_X86_REG_MXCSR))
+            if state.error:
+                if self.math_handler:
+                    raise GuestFault(
+                        "guest math error handler invocation is unsupported"
+                    )
+                write_guest(cpu, self.crt + 0x20, DWORD.pack(state.error))
+            cpu.reg_write(UC_X86_REG_XMM0, state.value)
+            cpu.reg_write(UC_X86_REG_MXCSR, state.mxcsr)
+            return 0
+        if name == "_errno":
+            return self.crt + 0x20
         if name == "strlen":
             return string_length(cpu, arg)
-        if name == "_strnicmp":
-            return compare_prefix(
-                cpu, arg, cpu.reg_read(UC_X86_REG_RDX), cpu.reg_read(UC_X86_REG_R8)
+        if name in ("strcmp", "_strnicmp"):
+            limited = name == "_strnicmp"
+            return compare_strings(
+                cpu,
+                arg,
+                cpu.reg_read(UC_X86_REG_RDX),
+                cpu.reg_read(UC_X86_REG_R8) if limited else None,
+                ignore_case=limited,
             )
         if name == "_set_app_type":
             self.app_type = arg
+        elif name == "_set_new_mode":
+            mode = arg & 0xFFFFFFFF
+            if mode not in (0, 1):
+                raise GuestFault(
+                    "invalid CRT new mode requires invalid-parameter handling"
+                )
+            result = self.new_mode
+            self.new_mode = mode
         elif name == "_set_fmode":
             if arg in (0x4000, 0x8000, 0x10000):
                 self.fmode = arg

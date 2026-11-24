@@ -66,8 +66,8 @@ class GraphicsMemory:
         protection = DWORD.unpack(read_guest(cpu, stack + 40, 4))[0]
         if self.table_pages is None:
             raise GuestFault("graphics aperture is not configured")
-        if kind == PAGES_64K | RESERVE:
-            page_size, committed = GRANULARITY, False
+        if kind in (PAGES_64K | RESERVE, PAGES_64K | RESERVE | COMMIT):
+            page_size, committed = GRANULARITY, bool(kind & COMMIT)
         elif kind == PAGES_2M | RESERVE | COMMIT:
             page_size, committed = LARGE_PAGE, True
         else:

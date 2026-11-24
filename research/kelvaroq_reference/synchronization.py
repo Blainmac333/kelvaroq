@@ -1,4 +1,4 @@
-"""Private semaphore handles for the single-threaded CPU reference."""
+"""Waitable kernel objects owned by the single-threaded guest process."""
 
 import struct
 from dataclasses import dataclass
@@ -24,15 +24,46 @@ class Semaphore:
     maximum: int
     access: int
 
+    def consume(self):
+        if self.count == 0:
+            return False
+        self.count -= 1
+        return True
 
-class Semaphores:
+
+@dataclass
+class Event:
+    manual_reset: bool
+    signaled: bool
+    access: int = SYNCHRONIZE | MODIFY
+
+    def consume(self):
+        ready = self.signaled
+        if not self.manual_reset:
+            self.signaled = False
+        return ready
+
+
+class Synchronization:
     def __init__(self):
         self.handles = {}
         self.next_handle = 0x20000
 
+    def insert(self, obj):
+        handle = self.next_handle
+        self.next_handle += 1
+        self.handles[handle] = obj
+        return handle, None
+
     def invoke(self, cpu, name):
         """Return (ABI result, last-error update); None leaves last error unchanged."""
         handle = cpu.reg_read(UC_X86_REG_RCX)
+        if name in ("CreateEventA", "CreateEventW"):
+            if handle or cpu.reg_read(UC_X86_REG_R9):
+                raise GuestFault("named or explicitly secured event is unsupported")
+            manual = bool(cpu.reg_read(UC_X86_REG_RDX) & 0xFFFFFFFF)
+            signaled = bool(cpu.reg_read(UC_X86_REG_R8) & 0xFFFFFFFF)
+            return self.insert(Event(manual, signaled))
         if name == "CreateSemaphoreExW":
             initial = cpu.reg_read(UC_X86_REG_RDX) & 0xFFFFFFFF
             maximum = cpu.reg_read(UC_X86_REG_R8) & 0xFFFFFFFF
@@ -44,24 +75,31 @@ class Semaphores:
                 return 0, 87
             if access & ~0x1F0003:
                 raise GuestFault("unsupported semaphore access rights")
-            handle = self.next_handle
-            self.next_handle += 1
-            self.handles[handle] = Semaphore(initial, maximum, access)
-            return handle, None
+            return self.insert(Semaphore(initial, maximum, access))
         if name not in (
             "ReleaseSemaphore",
+            "SetEvent",
+            "ResetEvent",
             "WaitForSingleObject",
             "WaitForSingleObjectEx",
             "CloseHandle",
         ):
             return NotImplemented, None
-        semaphore = self.handles.get(handle)
-        if semaphore is None:
+        obj = self.handles.get(handle)
+        if obj is None:
             return (WAIT_FAILED if name.startswith("Wait") else 0), 6
         if name == "CloseHandle":
             del self.handles[handle]
             return 1, None
+        if name in ("SetEvent", "ResetEvent"):
+            if not isinstance(obj, Event):
+                return 0, 6
+            obj.signaled = name == "SetEvent"
+            return 1, None
         if name == "ReleaseSemaphore":
+            if not isinstance(obj, Semaphore):
+                return 0, 6
+            semaphore = obj
             if not semaphore.access & MODIFY:
                 return 0, 5
             amount = cpu.reg_read(UC_X86_REG_RDX) & 0xFFFFFFFF
@@ -74,12 +112,11 @@ class Semaphores:
                 write_guest(cpu, previous, DWORD.pack(semaphore.count))
             semaphore.count += amount
             return 1, None
-        if not semaphore.access & SYNCHRONIZE:
+        if not obj.access & SYNCHRONIZE:
             return WAIT_FAILED, 5
         if name.endswith("Ex") and cpu.reg_read(UC_X86_REG_R8) & 0xFFFFFFFF:
             raise GuestFault("alertable wait requires guest APC delivery")
-        if semaphore.count:
-            semaphore.count -= 1
+        if obj.consume():
             return 0, None
         if cpu.reg_read(UC_X86_REG_RDX) & 0xFFFFFFFF:
             raise GuestFault("blocking wait requires guest scheduling")

@@ -11,6 +11,7 @@ from unicorn import (
     UcError,
 )
 from unicorn.x86_const import (
+    UC_X86_REG_MXCSR,
     UC_X86_REG_R8,
     UC_X86_REG_R9,
     UC_X86_REG_RAX,
@@ -20,7 +21,7 @@ from unicorn.x86_const import (
     UC_X86_REG_RSP,
 )
 
-from .crt import Crt, fill_memory
+from .crt import Crt, copy_memory, fill_memory
 from .graphics_memory import GraphicsMemory
 from .kernel import Kernel
 from .memory import QWORD, GuestFault, map_image, prepare_services, prepare_thread
@@ -31,9 +32,19 @@ INSTRUCTIONS_PER_SLICE = 1_000_000
 
 
 class Startup:
-    def __init__(self, plan, data, console="series-x"):
+    def __init__(
+        self,
+        plan,
+        data,
+        console="series-x",
+        processor_info=None,
+        *,
+        smt_enabled=False,
+        host_topology=False,
+    ):
         self.plan = plan
         self.cpu = Uc(UC_ARCH_X86, UC_MODE_64)
+        self.cpu.reg_write(UC_X86_REG_MXCSR, 0x1F80)
         self.vector = VectorMoves()
         map_image(self.cpu, plan, data)
         self.cpu.hook_add(
@@ -48,7 +59,13 @@ class Startup:
         self.stack_top, crt = prepare_thread(self.cpu, plan, thread)
         self.crt = Crt(self.cpu, crt)
         self.kernel = Kernel(
-            plan["base"], self.symbols, self.services, self.crt.command_lines
+            plan["base"],
+            self.symbols,
+            self.services,
+            self.crt.command_lines,
+            processor_info,
+            smt_enabled=smt_enabled,
+            host_topology=host_topology,
         )
         self.registry = Registry(console)
         self.graphics_memory = GraphicsMemory()
@@ -57,6 +74,7 @@ class Startup:
         )
         self.blocker = None
         self.calls = {}
+        self.log = None
         self.initializers = []
         self.pending_init = None
         self.deadline = time.monotonic() + 30
@@ -84,6 +102,8 @@ class Startup:
         symbol = self.symbols[index]
         name, dll = symbol["name"], symbol["dll"]
         self.calls[name] = self.calls.get(name, 0) + 1
+        if self.log and self.calls[name] == 1:
+            self.log(f"Service  {dll}!{name}")
         if dll.startswith("api-ms-win-crt-runtime-") and name in (
             "_initterm_e",
             "_initterm",
@@ -112,6 +132,8 @@ class Startup:
                 result = self.graphics_memory.allocate(cpu)
             elif dll == "vcruntime140.dll" and name == "memset":
                 result = fill_memory(cpu)
+            elif dll == "vcruntime140.dll" and name == "memcpy":
+                result = copy_memory(cpu)
             else:
                 result = NotImplemented
             if result is not NotImplemented:
@@ -200,6 +222,10 @@ class Startup:
             if not target:
                 continue
             self.initializers.append(hex(target - self.plan["base"]))
+            if self.log:
+                self.log(
+                    f"Initialiseur {len(self.initializers)}  RVA {self.initializers[-1]}"
+                )
             self.cpu.mem_write(child_sp, QWORD.pack(self.return_pc))
             self.cpu.reg_write(UC_X86_REG_RSP, child_sp)
             if not self.run_until_return(target):

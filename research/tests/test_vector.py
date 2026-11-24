@@ -71,6 +71,42 @@ class VectorTests(unittest.TestCase):
     def test_unknown_instruction_stays_with_cpu(self):
         self.assertIsNone(self.execute("0f 0b"))
 
+    def test_qword_subtract_wraps_each_lane(self):
+        self.cpu.reg_write(UC_X86_REG_RCX, 0x2000)
+        self.cpu.reg_write(
+            UC_X86_REG_YMM0, int.from_bytes(struct.pack("<4Q", 0, 4, 3, 1), "little")
+        )
+        self.cpu.mem_write(0x2000, struct.pack("<4Q", 1, 2, 3, 10))
+        self.execute("c5 fd fb 09")
+        self.assertEqual(
+            self.cpu.reg_read(UC_X86_REG_YMM1).to_bytes(32, "little"),
+            struct.pack("<4q", -1, 2, 0, -9),
+        )
+
+    def test_packed_equality_compares_each_dword(self):
+        data = bytearray(self.payload)
+        data[7] ^= 1
+        data[31] ^= 1
+        self.cpu.mem_write(0x2000, bytes(data))
+        self.cpu.reg_write(UC_X86_REG_RCX, 0x2000)
+        self.execute("c5 fd 76 09")  # vpcmpeqd ymm1,ymm0,[rcx]
+        full = 0xFFFFFFFF
+        expected = struct.pack("<8I", full, 0, full, full, full, full, full, 0)
+        self.assertEqual(
+            self.cpu.reg_read(UC_X86_REG_YMM1).to_bytes(32, "little"), expected
+        )
+        self.execute("c5 f9 76 c0")  # vpcmpeqd xmm0,xmm0,xmm0
+        self.assertEqual(self.cpu.reg_read(UC_X86_REG_YMM0), (1 << 128) - 1)
+
+    def test_sign_extend_bytes_reads_only_the_active_lanes(self):
+        self.cpu.reg_write(UC_X86_REG_RCX, 0x2FFC)
+        self.cpu.mem_write(0x2FFC, bytes([128, 0, 127, 255]))
+        self.execute("c4 e2 7d 22 01")
+        self.assertEqual(
+            self.cpu.reg_read(UC_X86_REG_YMM0).to_bytes(32, "little"),
+            struct.pack("<4q", -128, 0, 127, -1),
+        )
+
     def test_broadcast_reads_exactly_one_qword(self):
         word = 0xABA5123476542211
         self.cpu.mem_write(0x2FF8, struct.pack("<Q", word))

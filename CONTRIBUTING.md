@@ -5,12 +5,16 @@
 | Emplacement | Responsabilité |
 | --- | --- |
 | `src/main.rs` | Commandes publiques, exécution du worker et codes de sortie. |
+| `src/bin/kelvaroq-launcher.rs`, `src/package.rs` | Sélection du dossier ou du fichier dans Windows et résolution de l’exécutable déclaré. |
+| `src/desktop.rs` | Fenêtre de rendu, fenêtre de journal et durée de vie du processus de référence. |
+| `src/simd.rs`, `src/simd_vector.rs` | Calculs flottants x64 de référence et isolation de l’environnement flottant de l’hôte. |
 | `src/image.rs` | Validation du PE x64, contrôle des bornes, sections, imports, données TLS et empreinte. |
 | `src/gpu.rs` | Interfaces Direct3D 12 et DXGI, soumission, fence et vérification du contenu GPU. |
 | `research/kelvaroq_reference/memory.py` | Cartographie invitée, TLS, pile et contrôle des accès des services. |
 | `research/kelvaroq_reference/cpu.py` | ABI x64, ordre des appels, reprise après initialiseur et budget d’exécution. |
 | `research/kelvaroq_reference/kernel.py`, `crt.py`, `registry.py` | Sémantique des services émulés et état par processus invité. |
 | `research/kelvaroq_reference/graphics_memory.py` | Plages d’adresses virtuelles graphiques, granularité et suivi des réservations invitées. |
+| `research/kelvaroq_reference/synchronization.py` | Handles invités, événements, sémaphores et sémantique des attentes. |
 | `research/kelvaroq_reference/vector.py` | Opérations vectorielles de référence, largeurs et permissions mémoire. |
 | `scripts/check_shaders.py` | Construit le traducteur de référence à partir des PR épinglées et vérifie ses résultats sur le GPU nommé. |
 | `research/tests/` | Cas minimaux originaux qui exercent le comportement public et les contrats CPU. |

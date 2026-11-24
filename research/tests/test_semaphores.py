@@ -62,3 +62,32 @@ class SemaphoreTests(unittest.TestCase):
         handle = self.create()
         with self.assertRaisesRegex(GuestFault, "scheduling"):
             self.call("WaitForSingleObject", handle, 0xFFFFFFFF)
+
+    def test_anonymous_events_reset_automatically_or_manually(self):
+        for manual in (False, True):
+            with self.subTest(manual=manual):
+                handle = self.call("CreateEventA", 0, manual, 1, 0)
+                self.assertEqual(self.call("WaitForSingleObject", handle, 0), 0)
+                self.assertEqual(
+                    self.call("WaitForSingleObject", handle, 0), 0 if manual else 258
+                )
+                self.assertEqual(self.call("ResetEvent", handle), 1)
+                self.assertEqual(self.call("WaitForSingleObject", handle, 0), 258)
+                for _ in range(2):
+                    self.assertEqual(self.call("SetEvent", handle), 1)
+                self.assertEqual(self.call("WaitForSingleObjectEx", handle, 0, 0), 0)
+                self.assertEqual(
+                    self.call("WaitForSingleObject", handle, 0), 0 if manual else 258
+                )
+                self.assertEqual(self.call("CloseHandle", handle), 1)
+                self.assertEqual(self.call("SetEvent", handle), 0)
+                self.assertEqual(self.kernel.last_error, 6)
+
+    def test_cross_type_calls_preserve_both_objects(self):
+        sem = self.create(1)
+        event = self.call("CreateEventW", 0, 0, 0, 0)
+        self.assertNotEqual(event, sem)
+        self.assertEqual(self.call("SetEvent", sem), 0)
+        self.assertEqual(self.call("ReleaseSemaphore", event, 1, 0), 0)
+        self.assertEqual(self.call("WaitForSingleObject", sem, 0), 0)
+        self.assertEqual(self.call("WaitForSingleObject", event, 0), 258)

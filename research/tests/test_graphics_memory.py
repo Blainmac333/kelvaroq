@@ -84,6 +84,17 @@ class GraphicsMemoryTests(unittest.TestCase):
         with self.assertRaises(UcError):
             self.cpu.emu_start(first, first + 1)
 
+    def test_committed_64k_allocation_preserves_alignment_and_protection(self):
+        address = self.allocate(0x20000, kind=0x20403000, flags=0x183)
+        region = self.memory.reservations[-1]
+        self.assertTrue(region.committed)
+        self.assertEqual(region.page_size, GRANULARITY)
+        self.assertEqual(address % GRANULARITY, 0)
+        self.assertEqual(read_guest(self.cpu, address + 0x1FFFF, 1), b"\0")
+        write_guest(self.cpu, address + 0x1FFFF, b"x")
+        with self.assertRaises(GuestFault):
+            write_guest(self.cpu, address + 0x20000, b"x")
+
     def test_low_address_request_and_cpu_protection(self):
         self.cpu.mem_write(0x1128, struct.pack("<I", 0x22002))
         address = self.allocate(0x200000, kind=0x20003000, flags=7)

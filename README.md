@@ -2,9 +2,19 @@
 
 # Kelvaroq
 
-Projet privé de compatibilité Xbox Series X|S pour Windows x64, écrit en Rust avec un moteur CPU de référence pour la recherche. L’objectif est une scène jouable à 30 images rendues par seconde, avec ses textures correctes et une cadence régulière sur NVIDIA et AMD.
+Projet privé de compatibilité Xbox Series X|S pour Windows x64, écrit en Rust avec un moteur CPU de référence pour la recherche. L’objectif est une scène jouable en **3840 × 2160 à 30 images rendues par seconde**, avec ses textures correctes et une cadence régulière sur NVIDIA et AMD.
 
-**État du prototype.** Sur l’image de référence, les deux callbacks TLS se terminent et le point d’entrée exécute les premiers initialiseurs. Le programme configure sa mémoire graphique et réserve deux plages virtuelles dans chacun des profils Series X et Series S. Quatre régions de mémoire sont désormais engagées et le programme crée dix sémaphores. Le premier service manquant est `GetLogicalProcessorInformation`. Le jeu n’atteint pas sa première image. Un test graphique indépendant rend deux cibles hors écran et relit huit pixels par adaptateur. Il passe sur une GeForce RTX 5080 et sur le circuit Radeon intégré du même PC.
+**État du prototype.** Sur les deux profils, l’image de référence termine ses deux callbacks TLS, lit la topologie console, crée quatre événements et entre dans 36 initialiseurs. L’arrêt actuel survient dans une boucle vectorielle x64 avant la première image du jeu. Une sonde Direct3D 12 indépendante a vérifié huit pixels sur la GeForce RTX 5080 puis sur le circuit Radeon intégré du même PC.
+
+## Lancer le paquet Windows
+
+1. Extraire entièrement le ZIP Windows x64 dans un dossier.
+2. Ouvrir **Kelvaroq.exe**. Choisir le dossier du jeu ou son exécutable. Le glisser-déposer de l’un ou l’autre sur Kelvaroq.exe fonctionne aussi.
+3. Suivre le démarrage dans la fenêtre **Journal**. La fenêtre de rendu reste noire jusqu’à ce qu’une image invitée soit disponible. À l’arrêt, le diagnostic reste consultable. Fermer la fenêtre de rendu termine la session.
+
+Le paquet inclut le moteur de référence et son interpréteur. Le dossier peut être déplacé en conservant ses fichiers ensemble. Pour traiter un dossier, le lanceur utilise l’exécutable Series déclaré dans `MicrosoftGame.config`. En l’absence de manifeste, il accepte le seul `.exe` du dossier. En cas de choix ambigu, sélectionner le fichier directement.
+
+La fenêtre demande deux tampons Direct3D 12 de 3840 × 2160. Le journal affiche leurs dimensions après vérification sur le GPU. La fenêtre conserve le format 16:9 lors du redimensionnement. La résolution à laquelle le jeu calcule ses images sera mesurée lorsque son rendu sera raccordé.
 
 ## Construire sous Windows
 
@@ -17,6 +27,8 @@ python -m venv .venv
 git config core.hooksPath .githooks
 ```
 
+Pour reconstruire le ZIP privé du prototype depuis Windows, utiliser Python 3.11 ou ultérieur et exécuter `python scripts/package_windows.py`. Le script fournit les notices des composants tiers, vérifie leurs empreintes et teste l’archive décompressée hors du dépôt. Le résultat se trouve dans `target/dist/`. Le moteur de référence utilise Unicorn sous GPLv2. La notice et les sources amont correspondantes sont incluses. [Licence du moteur Unicorn](https://github.com/unicorn-engine/unicorn/blob/2.1.4/COPYING)
+
 ## Exécuter
 
 `inspect` lit un fichier PE et donne son empreinte, son point d’entrée, ses sections et ses imports. Avec `--json`, il décrit aussi les adresses nécessaires au démarrage. `boot` exécute les instructions dans un espace mémoire invité. Remplacer le chemin d’exemple par celui du fichier local.
@@ -25,10 +37,11 @@ git config core.hooksPath .githooks
 $image = 'D:\images\exemple.exe'
 .\target\release\kelvaroq inspect $image
 .\target\release\kelvaroq boot $image --python .\.venv\Scripts\python.exe
+.\target\release\kelvaroq play $image --python .\.venv\Scripts\python.exe
 .\target\release\kelvaroq gpu
 ```
 
-`boot` rend le code de sortie 0 si le point d’entrée revient, 2 si l’exécution invitée s’arrête avec un diagnostic, 1 pour une erreur d’outil ou de chargement. La valeur renvoyée par le programme invité figure dans le JSON. `boot --console series-s` sélectionne le profil Series S. Le choix par défaut est `series-x`. `gpu --adapter 0` limite la sonde à un adaptateur DXGI. Les deux commandes peuvent être exécutées indépendamment.
+`boot` fournit un rapport JSON et rend le code de sortie 0 si le point d’entrée revient, 2 si l’exécution invitée s’arrête avec un diagnostic, 1 pour une erreur d’outil ou de chargement. `play` ouvre les fenêtres de rendu et de journal sur le même moteur. Les deux commandes acceptent `--console series-s` et utilisent le profil Series X par défaut. Le manifeste choisit le SMT. Pour comparer les résultats de découverte CPU, `--host-topology` expose les enregistrements Windows du PC et `--processor-info <capture.bin>` rejoue des enregistrements x64 bruts. Conserver `kelvaroq_simd.dll` à côté du CLI. La sonde graphique indépendante accepte `gpu --adapter 0`.
 
 ## Vérifier les shaders sur la RTX 5080
 

@@ -5,19 +5,34 @@ import struct
 from unicorn.x86_const import UC_X86_REG_RCX, UC_X86_REG_RDX
 
 from .memory import QWORD, GuestFault, read_string, write_guest
-from .semaphores import Semaphores
+from .synchronization import Synchronization
+from .topology import ProcessorInfo
 
 
 class Kernel:
-    def __init__(self, base, symbols, services, command_lines):
+    def __init__(
+        self,
+        base,
+        symbols,
+        services,
+        command_lines,
+        processor_info=None,
+        *,
+        smt_enabled=False,
+        host_topology=False,
+    ):
         self.base = base
         self.command_lines = command_lines
         self.symbols = symbols
         self.services = services
         self.clock = 0
         self.last_error = 0
+        self.unhandled_exception_filter = 0
         self.critical_sections = {}
-        self.semaphores = Semaphores()
+        self.synchronization = Synchronization()
+        self.processor_info = ProcessorInfo(
+            processor_info, smt_enabled=smt_enabled, host_topology=host_topology
+        )
         self.modules = {
             dll: 0x4000 + i
             for i, dll in enumerate(sorted({s["dll"] for s in self.symbols}))
@@ -104,12 +119,19 @@ class Kernel:
             write_guest(cpu, arg, QWORD.pack(133000000000000000 + self.clock))
         elif name in self.command_lines:
             result = self.command_lines[name]
+        elif name == "SetUnhandledExceptionFilter":
+            result = self.unhandled_exception_filter
+            self.unhandled_exception_filter = arg
+        elif name == "GetLogicalProcessorInformation":
+            result, error = self.processor_info.query(cpu)
+            if error is not None:
+                self.last_error = error
         elif name == "GetLastError":
             result = self.last_error
         elif name == "SetLastError":
             self.last_error = arg & 0xFFFFFFFF
         else:
-            result, error = self.semaphores.invoke(cpu, name)
+            result, error = self.synchronization.invoke(cpu, name)
             if error is not None:
                 self.last_error = error
         return result

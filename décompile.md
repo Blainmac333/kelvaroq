@@ -34,6 +34,21 @@ python scripts/audit_content.py (Split-Path -Parent $image) local/audits/content
 .\.venv\Scripts\python research/check_archive_readers.py $image
 ```
 
+### Tables de streaming et bornes des blocs
+
+Dans chacun des 57 fichiers, la dernière entrée délimite la fin des données. Les 1 026 947 entrées représentent **1 026 890 blocs**. La routine à la RVA `0x55b23e0` cherche par position logique. Les bits 0 à 25 d’une entrée donnent une position sur disque en unités de 256 octets. Les bits 30 à 51 donnent la position logique en unités de 4 Kio. Les 12 bits hauts indiquent combien d’octets soustraire à la fin du bloc stocké. La sonde contrôle la progression de chaque position et la concordance de la dernière entrée avec les tailles déclarées.
+
+Le lecteur x64 du fichier d’origine et le calcul indépendant ont donné les mêmes positions et longueurs pour **226 requêtes sur un bloc et 57 traversant deux blocs**. Le lecteur a rejeté les 57 requêtes à la position de fin. Dans les échantillons retenus, 146 flux zlib ont passé la vérification de somme de contrôle et de longueur après décompression. La correspondance d’un bloc avec une tuile de texture reste à tracer au premier dessin qui la consomme.
+
+```powershell
+.\.venv\Scripts\python research/check_asset_blocks.py $image
+.\.venv\Scripts\python research/check_embedded_shaders.py $image
+```
+
+### Conteneurs de shaders embarqués
+
+La sonde retrouve dix conteneurs DXBC aux tables valides dans `.data`. Les en-têtes DXIL annoncent Shader Model 6.6, un programme vertex et neuf pixel. Dans les dix cas, la zone attribuée au bitcode a une taille de quatre octets et contient `NOBC`. Ces dix zones ne fournissent donc pas de bitcode LLVM à soumettre au pilote PC. Chaque conteneur possède une section `PRIV`, dont la signification reste à déterminer. Il reste aussi à identifier quels programmes le jeu soumet effectivement au GPU.
+
 ## Démarrage effectivement exécuté
 
 | Ordre | RVA | Observation |
@@ -62,7 +77,7 @@ Au retour `0x1e1cfe5`, le code teste le HRESULT. Le premier appel de réservatio
 
 Les sept autres DWORD valent zéro dans les deux exécutions. Cette mesure a révélé un défaut du moteur de référence initial. Unicorn 2.1.4 acceptait un `VXORPS xmm0,xmm0,xmm0` tout en conservant les 128 bits hauts de YMM0. Une instruction de stockage ultérieure plaçait donc des octets anciens dans la structure. Un test de régression démarre le registre entièrement à un et vérifie les 256 bits après l’instruction. La suite couvre aussi les déplacements vectoriels non alignés et `VZEROUPPER`.
 
-Pour reproduire, exécuter `inspect`, comparer l’empreinte ci-dessus, puis `boot` comme indiqué dans le README. Le JSON contient deux entrées dans `completed`, `stage = entry`, `initializers_entered = 4` et `stop.return_rva = 0x1f676a6`. Le code de sortie attendu est 2. La suite synthétique peut être rejouée sans posséder l’échantillon.
+Au jalon précédent, la trace comportait deux entrées dans `completed`, puis `stage = entry`, `initializers_entered = 4` et `stop.return_rva = 0x1f676a6`. La suite synthétique peut être rejouée indépendamment du fichier.
 
 ### De l’allocation à la topologie du processeur
 
@@ -71,6 +86,14 @@ Le même démarrage crée dix sémaphores anonymes et engage quatre régions de 
 L’initialisation utilise une diffusion, une addition et une permutation de mots de 64 bits. Les tests vérifient les voies hautes, le débordement entier et la lecture d’un mot en fin de page. La boucle à `0x554f6f3` avance de 20 octets par entrée. Dans le profil X, le registre portant la taille de la table vaut 131 072. À la fin d’une tranche d’instructions, le CPU reprend avec les mêmes registres et sous le même délai global.
 
 Le premier appel de `GetLogicalProcessorInformation`, à `0x1f676a0`, passe un tampon nul. Le code attend l’erreur 122 et la taille requise, puis effectue un second appel. D’après le désassemblage à partir de `0x1f67711`, il parcourt des enregistrements de 32 octets, compte les cœurs et additionne le nombre de bits de leurs masques. Le manifeste local demande `SMTEnabled=true`. Les masques effectivement présentés au titre sur console restent à vérifier.
+
+### Comptage des cœurs et arithmétique des initialiseurs
+
+Les profils Series X et Series S terminent leurs deux callbacks TLS et entrent dans **36 initialiseurs**. L’appel de copie mémoire au retour `0x5dc3f58` et la création d’événement au retour `0x2204215` se terminent. Le titre crée quatre événements et 20 sémaphores, puis effectue huit comparaisons de chaînes via `strcmp`. Les cinq régions engagées totalisent 4 771 020 800 octets en X et 3 052 404 736 en S. La dernière entrée d’initialiseur se trouve à `0x24709c0`. Le moteur de référence s’arrête sur `VPXOR ymm14,ymm8,ymm3` à `0x24716b3`. Les instructions voisines comparent, compactent et extraient des voies vectorielles. Vérifier la séquence complète avec des voies distinctes avant de s’appuyer sur ses résultats. Les deux profils s’arrêtent avant toute présentation invitée.
+
+Le binaire écrit les totaux de cœurs et de processeurs logiques aux RVA `0x71be5c0` et `0x71be5c4`. Sur le PC de développement, ces données valent 7 et 14 avec le modèle console, 16 et 32 avec la topologie Windows. La boucle à `0x1ad0fa4` construit un masque avec un décalage sur 32 bits. Pour 14, le masque vaut `0x3fff`. Pour 32, le décalage repart à zéro et le masque calculé vaut zéro. Une autre routine fournit explicitement `0x3fff` à l’appel d’affinité à `0x577fa9b`. La découverte de topologie fonctionne. Le placement effectif des threads invités reste à implémenter.
+
+La référence corrige aussi des opérations vectorielles atteintes par les initialiseurs. Un test reproduit `VSUBPS` à la RVA `0x4fa34d8` avec deux sources et un ancien destinataire différents. Sur Unicorn 2.1.4, la première voie utilisait la valeur de l’ancien destinataire. Le test impose désormais les quatre différences attendues et la remise à zéro des bits hauts de YMM. Les tests des multiplications-additions fusionnées vérifient le résultat arrondi une seule fois et la restauration de l’environnement flottant de l’hôte.
 
 ## Textures, barrières et dessin
 
