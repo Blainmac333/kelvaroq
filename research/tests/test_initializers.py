@@ -2,8 +2,9 @@
 
 import hashlib
 import unittest
+from unittest.mock import patch
 
-from unicorn.x86_const import UC_X86_REG_RSP, UC_X86_REG_YMM0
+from unicorn.x86_const import UC_X86_REG_RAX, UC_X86_REG_RSP, UC_X86_REG_YMM0
 
 from kelvaroq_reference.cpu import Startup
 from kelvaroq_reference.memory import QWORD
@@ -64,3 +65,13 @@ class InitializerTests(unittest.TestCase):
         self.vm.cpu.reg_write(UC_X86_REG_YMM0, (1 << 256) - 1)
         self.assertTrue(self.vm.call(address, False), self.vm.blocker)
         self.assertEqual(self.vm.cpu.reg_read(UC_X86_REG_YMM0), 0)
+
+    def test_guest_loop_resumes_across_slices(self):
+        address = self.base + 0x1060
+        # ecx = 12; eax = 0; do { ++eax; } while (--ecx); return
+        self.vm.cpu.mem_write(
+            address, bytes.fromhex("b9 0c 00 00 00 31 c0 ff c0 e2 fc c3")
+        )
+        with patch("kelvaroq_reference.cpu.INSTRUCTIONS_PER_SLICE", 4):
+            self.assertTrue(self.vm.call(address, False), self.vm.blocker)
+        self.assertEqual(self.vm.cpu.reg_read(UC_X86_REG_RAX), 12)

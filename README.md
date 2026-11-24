@@ -4,7 +4,7 @@
 
 Projet privé de compatibilité Xbox Series X|S pour Windows x64, écrit en Rust avec un moteur CPU de référence pour la recherche. L’objectif est une scène jouable à 30 images rendues par seconde, avec ses textures correctes et une cadence régulière sur NVIDIA et AMD.
 
-**État du prototype.** Sur l’image de référence, les deux callbacks TLS se terminent et le point d’entrée exécute les premiers initialiseurs. Le programme configure sa mémoire graphique et réserve deux plages virtuelles dans chacun des profils Series X et Series S. Le premier arrêt reproductible survient sur une demande `XMemVirtualAlloc` qui exige des pages engagées. Le jeu n’atteint pas sa première image. Un test graphique indépendant rend deux cibles hors écran et relit huit pixels par adaptateur. Il passe sur une GeForce RTX 5080 et sur le circuit Radeon intégré du même PC.
+**État du prototype.** Sur l’image de référence, les deux callbacks TLS se terminent et le point d’entrée exécute les premiers initialiseurs. Le programme configure sa mémoire graphique et réserve deux plages virtuelles dans chacun des profils Series X et Series S. Quatre régions de mémoire sont désormais engagées et le programme crée dix sémaphores. Le premier service manquant est `GetLogicalProcessorInformation`. Le jeu n’atteint pas sa première image. Un test graphique indépendant rend deux cibles hors écran et relit huit pixels par adaptateur. Il passe sur une GeForce RTX 5080 et sur le circuit Radeon intégré du même PC.
 
 ## Construire sous Windows
 

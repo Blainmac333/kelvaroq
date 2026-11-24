@@ -1,5 +1,6 @@
 """Test the vector data path with distinctive upper lanes and unaligned memory."""
 
+import struct
 import unittest
 
 from unicorn import (
@@ -69,3 +70,23 @@ class VectorTests(unittest.TestCase):
 
     def test_unknown_instruction_stays_with_cpu(self):
         self.assertIsNone(self.execute("0f 0b"))
+
+    def test_broadcast_reads_exactly_one_qword(self):
+        word = 0xABA5123476542211
+        self.cpu.mem_write(0x2FF8, struct.pack("<Q", word))
+        self.cpu.reg_write(UC_X86_REG_RCX, 0x2FF8)
+        self.execute("c4 e2 7d 59 09")
+        self.assertEqual(
+            self.cpu.reg_read(UC_X86_REG_YMM1).to_bytes(32, "little"),
+            struct.pack("<4Q", *[word] * 4),
+        )
+
+    def test_lane_add_wraps_and_permutation_crosses_128_bit_halves(self):
+        a = struct.pack("<4Q", 0xFFFFFFFFFFFFFFFF, 2, 30, 400)
+        b = struct.pack("<4Q", 1, 8, 70, 600)
+        self.cpu.reg_write(UC_X86_REG_YMM0, int.from_bytes(a, "little"))
+        self.cpu.reg_write(UC_X86_REG_YMM1, int.from_bytes(b, "little"))
+        self.execute("c5 fd d4 c1")
+        self.execute("c4 e3 fd 00 c8 1b")
+        result = self.cpu.reg_read(UC_X86_REG_YMM1).to_bytes(32, "little")
+        self.assertEqual(struct.unpack("<4Q", result), (1000, 100, 10, 0))

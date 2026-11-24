@@ -47,7 +47,7 @@ python scripts/audit_content.py (Split-Path -Parent $image) local/audits/content
 | 8 | `0x1e1ceec` | Copie vectorielle non alignée avec `VMOVDQU`. Le contenu complet des deux voies est conservé par la référence. |
 | 9 | `0x1e1cfe0` | Appel de `d3d12_xs.dll!D3D12ConfigureVirtualMemoryX`. Le service renseigne les bornes invitées, puis l’appel revient à `0x1e1cfe5`. |
 | 10 | `0x1e1d00a`, `0x1e1d039` | Deux appels de réservation réussissent sans engager de pages. Les plages distinctes figurent dans le JSON. |
-| 11 | retour `0x1e1d186` | Première demande d’allocation avec engagement, type `0x20003000`. L’arrêt explicite précède l’octroi de mémoire dont les protections console restent à valider. |
+| 11 | retour `0x1e1d186` | Première allocation avec engagement, type `0x20003000`. L’invité reçoit une base alignée sur 2 Mio et poursuit l’initialisation. |
 
 La fonction à `0x55deb88` prépare le handle prédéfini `HKEY_LOCAL_MACHINE`, un sous-chemin UTF-16 et une sortie sur la pile. Elle teste le code de retour de l’ouverture. En cas de succès, elle cherche la valeur `ConsoleMode` dans `Software\Microsoft\Windows NT\CurrentVersion\OEM`, puis ferme la clé. La suite compare la donnée lue à plusieurs constantes. Les valeurs de modèle proposées par le dépôt étudié, `0x64` et `0x60`, produisent respectivement les types 7 et 6 en exécutant cette fonction avec le registre virtuel. Cette expérience confirme la branche du binaire. La valeur n’a pas été lue sur une console physique.
 
@@ -62,7 +62,15 @@ Au retour `0x1e1cfe5`, le code teste le HRESULT. Le premier appel de réservatio
 
 Les sept autres DWORD valent zéro dans les deux exécutions. Cette mesure a révélé un défaut du moteur de référence initial. Unicorn 2.1.4 acceptait un `VXORPS xmm0,xmm0,xmm0` tout en conservant les 128 bits hauts de YMM0. Une instruction de stockage ultérieure plaçait donc des octets anciens dans la structure. Un test de régression démarre le registre entièrement à un et vérifie les 256 bits après l’instruction. La suite couvre aussi les déplacements vectoriels non alignés et `VZEROUPPER`.
 
-Pour reproduire, exécuter `inspect`, comparer l’empreinte ci-dessus, puis `boot` comme indiqué dans le README. Le JSON contient deux entrées dans `completed`, `stage = entry`, `initializers_entered = 4` et `stop.return_rva = 0x1e1d186`. Le code de sortie attendu est 2. La suite synthétique peut être rejouée sans posséder l’échantillon.
+Pour reproduire, exécuter `inspect`, comparer l’empreinte ci-dessus, puis `boot` comme indiqué dans le README. Le JSON contient deux entrées dans `completed`, `stage = entry`, `initializers_entered = 4` et `stop.return_rva = 0x1f676a6`. Le code de sortie attendu est 2. La suite synthétique peut être rejouée sans posséder l’échantillon.
+
+### De l’allocation à la topologie du processeur
+
+Le même démarrage crée dix sémaphores anonymes et engage quatre régions de mémoire invitée dans chaque profil. Leur taille cumulée est de 4 750 049 280 octets en Series X et de 3 031 433 216 octets en Series S. Le compteur porte sur la mémoire engagée par le CPU invité. La VRAM de la carte hôte est mesurée séparément lorsqu’un travail graphique lui est soumis.
+
+L’initialisation utilise une diffusion, une addition et une permutation de mots de 64 bits. Les tests vérifient les voies hautes, le débordement entier et la lecture d’un mot en fin de page. La boucle à `0x554f6f3` avance de 20 octets par entrée. Dans le profil X, le registre portant la taille de la table vaut 131 072. À la fin d’une tranche d’instructions, le CPU reprend avec les mêmes registres et sous le même délai global.
+
+Le premier appel de `GetLogicalProcessorInformation`, à `0x1f676a0`, passe un tampon nul. Le code attend l’erreur 122 et la taille requise, puis effectue un second appel. D’après le désassemblage à partir de `0x1f67711`, il parcourt des enregistrements de 32 octets, compte les cœurs et additionne le nombre de bits de leurs masques. Le manifeste local demande `SMTEnabled=true`. Les masques effectivement présentés au titre sur console restent à vérifier.
 
 ## Textures, barrières et dessin
 
@@ -78,4 +86,4 @@ Pour reproduire, exécuter `inspect`, comparer l’empreinte ci-dessus, puis `bo
 - La fonction à `0x28f03db` prépare une structure temporelle. Le chemin observé utilise l’identifiant `0x10001`, inverse le signe du jitter, fournit des facteurs unitaires dans ce cas et écrit un indicateur de réinitialisation à `+0x198`. Il reste à vérifier quels tampons et quelles unités arrivent réellement à chaque image.
 - Les fonctions à `0x24821dd` et `0x24824c1` utilisent un identifiant de trame issu du même global à `0x75e0e88` pour la soumission et la présentation. Des appels synthétiques à un et deux plans donnent un pas de `0x48` octets entre descripteurs de plans. Un identifiant commun permettrait de relier les traces CPU et GPU lorsque le chemin sera raccordé.
 
-La référence actuelle a réservé deux fois 24 Gio d’adresses virtuelles dans le profil X et deux fois 16 Gio dans le profil S. Le troisième appel demande une allocation avec engagement, respectivement de `0x49400000` et `0x48a00000` octets. Les indicateurs valent `0x183` et la protection demandée `0x22004`. Le backend devra honorer les accès invités et le partage avec le GPU avant de renvoyer une adresse pour ce type d’allocation. Les observations statiques n’établissent encore ni la cause des textures manquantes d’une scène particulière ni un débit d’images du jeu sur PC.
+La référence actuelle a réservé deux fois 24 Gio d’adresses virtuelles dans le profil X et deux fois 16 Gio dans le profil S. Le troisième appel demande une allocation avec engagement, respectivement de `0x49400000` et `0x48a00000` octets. Les indicateurs valent `0x183` et la protection demandée `0x22004`. Les accès CPU invités sont implémentés pour ces plages. La visibilité des écritures entre CPU et GPU reste à vérifier lors de la création des ressources. Les observations statiques n’établissent encore ni la cause des textures manquantes d’une scène particulière ni un débit d’images du jeu sur PC.

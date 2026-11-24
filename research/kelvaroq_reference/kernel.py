@@ -5,6 +5,7 @@ import struct
 from unicorn.x86_const import UC_X86_REG_RCX, UC_X86_REG_RDX
 
 from .memory import QWORD, GuestFault, read_string, write_guest
+from .semaphores import Semaphores
 
 
 class Kernel:
@@ -16,6 +17,7 @@ class Kernel:
         self.clock = 0
         self.last_error = 0
         self.critical_sections = {}
+        self.semaphores = Semaphores()
         self.modules = {
             dll: 0x4000 + i
             for i, dll in enumerate(sorted({s["dll"] for s in self.symbols}))
@@ -107,5 +109,7 @@ class Kernel:
         elif name == "SetLastError":
             self.last_error = arg & 0xFFFFFFFF
         else:
-            return NotImplemented
+            result, error = self.semaphores.invoke(cpu, name)
+            if error is not None:
+                self.last_error = error
         return result

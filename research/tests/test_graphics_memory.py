@@ -18,7 +18,7 @@ from kelvaroq_reference.graphics_memory import (
     GRANULARITY,
     GraphicsMemory,
 )
-from kelvaroq_reference.memory import GuestFault
+from kelvaroq_reference.memory import GuestFault, read_guest, write_guest
 
 
 class GraphicsMemoryTests(unittest.TestCase):
@@ -33,11 +33,11 @@ class GraphicsMemoryTests(unittest.TestCase):
         self.memory = GraphicsMemory()
         self.assertEqual(self.memory.configure(self.cpu), 0)
 
-    def allocate(self, size, base=0, kind=0x20402000):
+    def allocate(self, size, base=0, kind=0x20402000, flags=0x21):
         self.cpu.reg_write(UC_X86_REG_RCX, base)
         self.cpu.reg_write(UC_X86_REG_RDX, size)
         self.cpu.reg_write(UC_X86_REG_R8, kind)
-        self.cpu.reg_write(UC_X86_REG_R9, 0x21)
+        self.cpu.reg_write(UC_X86_REG_R9, flags)
         return self.memory.allocate(self.cpu)
 
     def test_configuration_writes_only_its_two_outputs(self):
@@ -66,7 +66,38 @@ class GraphicsMemoryTests(unittest.TestCase):
         self.assertEqual(len(self.memory.reservations), 1)
         self.assertEqual(self.memory.reservations[0].size, GRANULARITY)
 
-    def test_commit_cannot_succeed_as_a_reservation(self):
+    def test_large_page_commit_has_distinct_writable_backing(self):
+        reserved = self.allocate(GRANULARITY)
+        first = self.allocate(0x300000, kind=0x20003000, flags=0x183)
+        second = self.allocate(0x1000, kind=0x20003000, flags=0x283)
+        self.assertEqual(first % (2 << 20), 0)
+        self.assertEqual(second % (2 << 20), 0)
+        self.assertGreaterEqual(second, first + 0x300000)
+        self.assertEqual(read_guest(self.cpu, first, 4), bytes(4))
+        write_guest(self.cpu, first + 0x300000 - 4, b"test")
+        self.assertEqual(read_guest(self.cpu, first + 0x300000 - 4, 4), b"test")
+        self.assertEqual(read_guest(self.cpu, second, 4), bytes(4))
+        with self.assertRaises(GuestFault):
+            read_guest(self.cpu, reserved, 1)
+        with self.assertRaises(GuestFault):
+            read_guest(self.cpu, first + 0x300000, 1)
+        with self.assertRaises(UcError):
+            self.cpu.emu_start(first, first + 1)
+
+    def test_low_address_request_and_cpu_protection(self):
+        self.cpu.mem_write(0x1128, struct.pack("<I", 0x22002))
+        address = self.allocate(0x200000, kind=0x20003000, flags=7)
+        self.assertGreater(address, 0)
+        self.assertLessEqual(address + 0x200000, FIRST_HIGH_ADDRESS)
+        self.assertEqual(self.memory.reservations[-1].protection, 0x22002)
+        self.assertEqual(read_guest(self.cpu, address, 1), bytes(1))
+        with self.assertRaises(GuestFault):
+            write_guest(self.cpu, address, b"x")
+
+    def test_unsupported_page_protection_preserves_allocator(self):
+        self.cpu.mem_write(0x1128, struct.pack("<I", 0x104))
+        mapping = list(self.cpu.mem_regions())
         with self.assertRaises(GuestFault):
             self.allocate(GRANULARITY, kind=0x20003000)
+        self.assertEqual(list(self.cpu.mem_regions()), mapping)
         self.assertEqual(self.memory.reservations, [])

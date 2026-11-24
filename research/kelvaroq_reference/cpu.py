@@ -7,7 +7,6 @@ from unicorn import (
     UC_ERR_INSN_INVALID,
     UC_HOOK_CODE,
     UC_MODE_64,
-    UC_QUERY_TIMEOUT,
     Uc,
     UcError,
 )
@@ -27,6 +26,8 @@ from .kernel import Kernel
 from .memory import QWORD, GuestFault, map_image, prepare_services, prepare_thread
 from .registry import Registry
 from .vector import VectorMoves
+
+INSTRUCTIONS_PER_SLICE = 1_000_000
 
 
 class Startup:
@@ -144,13 +145,13 @@ class Startup:
                 remaining = int((self.deadline - time.monotonic()) * 1_000_000)
                 if remaining <= 0:
                     self.blocker = {"reason": "startup time limit"}
-                    return False
+                    break
                 try:
                     self.cpu.emu_start(
                         address,
                         self.return_pc,
                         timeout=min(remaining, 3_000_000),
-                        count=1_000_000,
+                        count=INSTRUCTIONS_PER_SLICE,
                     )
                 except UcError as error:
                     if error.errno != UC_ERR_INSN_INVALID:
@@ -161,8 +162,15 @@ class Startup:
                         raise
                     address = following
                     continue
-                if self.blocker or not self.pending_init:
+                if self.blocker:
                     break
+                if not self.pending_init:
+                    address = self.cpu.reg_read(UC_X86_REG_RIP)
+                    if address == self.return_pc:
+                        break
+                    # Either the time slice or instruction slice expired. Resume
+                    # from the live PC under the original process-wide deadline.
+                    continue
                 name, first, end = self.pending_init
                 self.pending_init = None
                 result = self.run_initializers(name, first, end)
@@ -175,12 +183,6 @@ class Startup:
         except (UcError, GuestFault) as error:
             self.blocker = {"reason": "guest CPU stopped", "detail": str(error)}
         pc = self.cpu.reg_read(UC_X86_REG_RIP)
-        if not self.blocker and pc != self.return_pc:
-            self.blocker = {
-                "reason": "time limit"
-                if self.cpu.query(UC_QUERY_TIMEOUT)
-                else "instruction limit"
-            }
         if self.blocker:
             if self.plan["base"] <= pc < self.plan["base"] + self.plan["size"]:
                 self.blocker["pc_rva"] = hex(pc - self.plan["base"])

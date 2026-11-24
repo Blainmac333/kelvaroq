@@ -1,9 +1,14 @@
-"""VEX-encoded unaligned vector moves and upper-lane clearing on x64."""
+"""Verified VEX vector operations for the startup reference."""
+
+import struct
 
 from capstone import CS_ARCH_X86, CS_MODE_64, Cs
 from capstone.x86_const import (
     X86_INS_VMOVDQU,
     X86_INS_VMOVUPS,
+    X86_INS_VPADDQ,
+    X86_INS_VPBROADCASTQ,
+    X86_INS_VPERMQ,
     X86_INS_VXORPS,
     X86_INS_VZEROUPPER,
     X86_OP_MEM,
@@ -44,6 +49,35 @@ def effective_address(cpu, insn, mem):
     return address & ((1 << 64) - 1)
 
 
+def operand_bytes(cpu, insn, operand, width):
+    if operand.type == X86_OP_MEM:
+        return read_guest(cpu, effective_address(cpu, insn, operand.mem), width)
+    number = cpu.reg_read(vector_register(insn, operand))
+    return number.to_bytes(32, "little")[:width]
+
+
+def packed_qwords(cpu, insn):
+    destination, *sources = insn.operands
+    width = destination.size
+    if insn.id == X86_INS_VPBROADCASTQ:
+        result = operand_bytes(cpu, insn, sources[0], 8) * (width // 8)
+    elif insn.id == X86_INS_VPERMQ:
+        lanes = struct.unpack("<4Q", operand_bytes(cpu, insn, sources[0], 32))
+        control = sources[1].imm
+        result = struct.pack(
+            "<4Q", *(lanes[(control >> shift) & 3] for shift in (0, 2, 4, 6))
+        )
+    else:
+        layout = struct.Struct("<" + "Q" * (width // 8))
+        left, right = (
+            layout.unpack(operand_bytes(cpu, insn, source, width)) for source in sources
+        )
+        result = layout.pack(
+            *((a + b) & 0xFFFFFFFFFFFFFFFF for a, b in zip(left, right))
+        )
+    cpu.reg_write(vector_register(insn, destination), int.from_bytes(result, "little"))
+
+
 class VectorMoves:
     def __init__(self):
         self.decoder = Cs(CS_ARCH_X86, CS_MODE_64)
@@ -67,6 +101,9 @@ class VectorMoves:
             X86_INS_VMOVDQU,
             X86_INS_VZEROUPPER,
             X86_INS_VXORPS,
+            X86_INS_VPADDQ,
+            X86_INS_VPBROADCASTQ,
+            X86_INS_VPERMQ,
         ):
             return None
         # Capstone also names EVEX instructions VMOVUPS. Masked and 512-bit
@@ -80,6 +117,8 @@ class VectorMoves:
             for index in range(16):
                 reg = ymm(index)
                 cpu.reg_write(reg, cpu.reg_read(reg) & lower)
+        elif insn.id in (X86_INS_VPADDQ, X86_INS_VPBROADCASTQ, X86_INS_VPERMQ):
+            packed_qwords(cpu, insn)
         elif insn.id == X86_INS_VXORPS:
             destination, left, right = insn.operands
             size = destination.size
@@ -105,11 +144,7 @@ class VectorMoves:
         size = source.size
         if size not in (16, 32) or destination.size != size:
             raise ValueError("unexpected VEX operand size")
-        if source.type == X86_OP_MEM:
-            value = read_guest(cpu, effective_address(cpu, insn, source.mem), size)
-        else:
-            number = cpu.reg_read(vector_register(insn, source))
-            value = number.to_bytes(32, "little")[:size]
+        value = operand_bytes(cpu, insn, source, size)
         if destination.type == X86_OP_MEM:
             write_guest(cpu, effective_address(cpu, insn, destination.mem), value)
         else:
