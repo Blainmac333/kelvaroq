@@ -6,6 +6,34 @@ Image PE32+ AMD64, version observée 1.0.2.1, SHA-256 `e95020b2fa4a721db3df59fde
 
 Trois preuves ont des portées différentes. Le désassemblage établit la forme d’un appel et ses arguments visibles. Une exécution de fonction avec des entrées construites établit son comportement pour ces entrées. Le démarrage depuis le fichier d’origine établit quelles fonctions sont réellement atteintes avec les services actuellement disponibles. Les adresses graphiques ci-dessous proviennent des deux premières méthodes.
 
+## Lecture intégrale du contenu et portée de l’analyse
+
+Le manifeste local couvre les 109 fichiers présents dans le dossier de cette version, soit **224 001 114 630 octets** lus séquentiellement, du premier au dernier octet de chaque fichier. Chaque entrée contient un chemin relatif, une taille et un SHA-256. La liste, la taille, l’identité et la date de modification des fichiers ont été comparées avant et après le parcours. L’empreinte de l’exécutable correspond à celle donnée plus haut. Le manifeste établit une référence pour comparer deux installations. L’authenticité de l’installation demanderait un manifeste de référence indépendant.
+
+| Fichiers | Nombre | Octets lus |
+| --- | ---: | ---: |
+| Archives `.rpf` | 22 | 161 307 137 472 |
+| Conteneurs `.ttpf` | 57 | 62 217 061 888 |
+| Exécutable | 1 | 120 181 760 |
+| Autres fichiers | 29 | 356 733 510 |
+
+Les archives nommées `shaders.rpf` et `textures.rpf` occupent respectivement 411 695 600 et 192 585 024 octets. Ces tailles sont déjà incluses dans les totaux. Associer une ressource de ces archives à une commande de dessin nécessite encore une trace du jeu.
+
+### Deux lecteurs d’archives reliés aux fichiers
+
+Le contrôle local charge deux pages de code du PE d’empreinte connue dans un CPU de référence et exécute des blocs ciblés avec les en-têtes réels. Les segments exécutés se situent après la lecture du fichier par le système. Le rapport compte séparément les sélections de taille et les entrées des tables.
+
+- **RPF9.** Les 22 fichiers portent les octets `39 46 50 52`. À la RVA `0x1fb268e`, le code compare cette signature. À `0x1fb26a7`, il choisit selon le mode l’une des deux longueurs de préfixe aux offsets 4 et 8. Les 44 sélections ont donné la valeur attendue et sont dans les bornes du fichier. Un en-tête témoin à signature incorrecte emprunte la branche d’échec.
+- **RDS5.** Les 57 fichiers portent la signature `RDS5`. La routine `0xf435f0` exige une lecture d’au moins 16 octets sur ce chemin. Elle lit le compteur à l’offset 4, conserve les 40 bits bas du champ à l’offset 8, puis prépare une copie de `8 × compteur` octets depuis l’offset 16. Les 16 octets suivants sont recopiés dans l’objet du lecteur. Le programme de contrôle a relu les tables complètes, vérifié la taille arrondie à 4 Kio, les arguments de copie et le bloc final pour chaque fichier. Les compteurs totalisent **1 026 947 entrées**. Une mauvaise signature et une lecture de 15 octets suivent le chemin de repli. La signification de chaque entrée et le décodage de chaque ressource restent à établir.
+- **Portée de la rétro-ingénierie.** Le PE fait 120 181 760 octets. La taille virtuelle de `.text` est de 99 875 174 octets. Le répertoire d’exceptions contient 299 257 entrées de déroulement de pile x64. Ce dernier nombre compte des plages de code décrites pour le déroulement de pile. Il ne fournit ni un nombre exact de fonctions source ni un taux de décompilation.
+
+Pour reproduire avec `$image` défini comme dans le README, depuis la racine du projet :
+
+```powershell
+python scripts/audit_content.py (Split-Path -Parent $image) local/audits/content-sha256.json
+.\.venv\Scripts\python research/check_archive_readers.py $image
+```
+
 ## Démarrage effectivement exécuté
 
 | Ordre | RVA | Observation |
