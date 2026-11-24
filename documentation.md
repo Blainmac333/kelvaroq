@@ -26,13 +26,13 @@ Dans le chemin de barrières examiné, une barrière UAV globale perd l’identi
 
 Le dépôt de référence associe `ConsoleMode` aux deux modèles. Kelvaroq réimplémente un registre en mémoire et applique ces deux valeurs. Appelée isolément, la même fonction du binaire renvoie 7 dans le profil X et 6 dans le profil S. Depuis le point d’entrée normal, les deux sélections produisent ensuite des tailles de mémoire différentes. C’est un comportement que l’on peut reprendre et tester indépendamment. [Profil de plateforme examiné](https://github.com/fxceless/victory-fork/blob/2119b0e44c53aa9648307b0c5c73590290305b1f/crates/victory-hle/src/modules/xsystem.rs#L162)
 
-Le backend étudié annonce à l’invité la plage d’adresses de l’application hôte lors de la configuration graphique. Kelvaroq exécute aujourd’hui le CPU dans un espace virtuel distinct. Reprendre ces bornes telles quelles ferait une promesse que son allocateur ne peut pas tenir. Un contrat commun doit relier la réservation virtuelle invitée, les pages effectivement engagées et les adresses GPU lors de la création des ressources. [Configuration mémoire examinée](https://github.com/fxceless/victory-fork/blob/2119b0e44c53aa9648307b0c5c73590290305b1f/crates/victory-gpu/src/device.rs#L197)
+Le backend étudié annonce à l’invité la plage d’adresses de l’application hôte lors de la configuration graphique. Kelvaroq exécute aujourd’hui le CPU dans un espace virtuel distinct. Reprendre ces bornes telles quelles ferait une promesse que son allocateur ne peut pas tenir. Kelvaroq publie désormais une plage virtuelle invitée et y réserve les deux premiers pools observés. Ces réservations tiennent compte de l’image, de la pile et des autres plages. L’engagement des pages et la liaison aux ressources GPU restent à implémenter. [Configuration mémoire examinée](https://github.com/fxceless/victory-fork/blob/2119b0e44c53aa9648307b0c5c73590290305b1f/crates/victory-gpu/src/device.rs#L197)
 
 ## Jalons mesurables
 
 | Ordre | Livrable | Preuve requise |
 | --- | --- | --- |
-| 1 | Terminer les initialiseurs nécessaires à l’image de référence. | Trace jusqu’à une étape identifiable après le CRT. Première dépendance graphique, définir une plage d’adresses virtuelles invitées et la relier aux réservations et aux ressources. |
+| 1 | Terminer les initialiseurs nécessaires à l’image de référence. | Trace jusqu’à une étape identifiable après le CRT. Relier les réservations aux pages engagées, puis aux ressources GPU en préservant leurs permissions et les alias. |
 | 2 | Faire parvenir une commande graphique invitée à Direct3D 12. | Trace de l’appel invité, correspondance des ressources et pixels attendus après relecture. |
 | 3 | Présenter une première image complète. | Texte, géométrie et textures attendus, image de référence, absence de ressources périmées lors du chargement. |
 | 4 | Valider une séquence interactive sur deux familles GPU. | Même parcours scripté et même résolution. Répéter un démarrage à froid et un à chaud, vérifier les images, la durée des trames et les blocages. |

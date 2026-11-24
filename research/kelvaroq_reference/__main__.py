@@ -27,6 +27,9 @@ def main():
                         "completed": completed,
                         "stop": vm.blocker,
                         "calls": vm.calls,
+                        "virtual_reservations": [
+                            vars(r) for r in vm.graphics_memory.reservations
+                        ],
                         "initializers_entered": len(vm.initializers),
                         "last_initializer": vm.initializers[-1:],
                     }

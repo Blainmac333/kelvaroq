@@ -10,6 +10,7 @@
 | `research/kelvaroq_reference/memory.py` | Cartographie invitée, TLS, pile et contrôle des accès des services. |
 | `research/kelvaroq_reference/cpu.py` | ABI x64, ordre des appels, reprise après initialiseur et budget d’exécution. |
 | `research/kelvaroq_reference/kernel.py`, `crt.py`, `registry.py` | Sémantique des services émulés et état par processus invité. |
+| `research/kelvaroq_reference/graphics_memory.py` | Plages d’adresses virtuelles graphiques, granularité et suivi des réservations invitées. |
 | `research/kelvaroq_reference/vector.py` | Opérations vectorielles de référence, largeurs et permissions mémoire. |
 | `research/tests/` | Cas minimaux originaux qui exercent le comportement public et les contrats CPU. |
 

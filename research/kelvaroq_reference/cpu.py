@@ -22,6 +22,7 @@ from unicorn.x86_const import (
 )
 
 from .crt import Crt, fill_memory
+from .graphics_memory import GraphicsMemory
 from .kernel import Kernel
 from .memory import QWORD, GuestFault, map_image, prepare_services, prepare_thread
 from .registry import Registry
@@ -49,6 +50,7 @@ class Startup:
             plan["base"], self.symbols, self.services, self.crt.command_lines
         )
         self.registry = Registry(console)
+        self.graphics_memory = GraphicsMemory()
         self.cpu.hook_add(
             UC_HOOK_CODE, self.service, begin=self.services, end=self.return_pc - 1
         )
@@ -103,6 +105,10 @@ class Startup:
                 result = self.crt.invoke(cpu, name)
             elif dll == "advapi32.dll":
                 result = self.registry.invoke(cpu, name)
+            elif dll == "d3d12_xs.dll" and name == "D3D12ConfigureVirtualMemoryX":
+                result = self.graphics_memory.configure(cpu)
+            elif dll == "xmem.dll" and name == "XMemVirtualAlloc":
+                result = self.graphics_memory.allocate(cpu)
             elif dll == "vcruntime140.dll" and name == "memset":
                 result = fill_memory(cpu)
             else:
