@@ -12,6 +12,7 @@
 | `research/kelvaroq_reference/kernel.py`, `crt.py`, `registry.py` | Sémantique des services émulés et état par processus invité. |
 | `research/kelvaroq_reference/graphics_memory.py` | Plages d’adresses virtuelles graphiques, granularité et suivi des réservations invitées. |
 | `research/kelvaroq_reference/vector.py` | Opérations vectorielles de référence, largeurs et permissions mémoire. |
+| `scripts/check_shaders.py` | Construit le traducteur de référence à partir des PR épinglées et vérifie ses résultats sur le GPU nommé. |
 | `research/tests/` | Cas minimaux originaux qui exercent le comportement public et les contrats CPU. |
 
 1. Un changement corrige un comportement observable. Indiquer le scénario initial, le résultat attendu et la preuve après correction. Une fonction dont la seule justification est de faire avancer le compteur d’instructions doit être revue.
@@ -31,8 +32,8 @@ cargo fmt --all -- --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
 cargo build --release --locked
-.\.venv\Scripts\ruff check research
-.\.venv\Scripts\ruff format --check research
+.\.venv\Scripts\ruff check research scripts
+.\.venv\Scripts\ruff format --check research scripts
 .\.venv\Scripts\python -m unittest discover -v -s research/tests
 .\target\release\kelvaroq gpu
 ```

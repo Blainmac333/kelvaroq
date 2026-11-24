@@ -42,8 +42,8 @@ jobs:
           cargo +stable build --release --locked
       - name: Vérifier le moteur de référence
         run: |
-          python -m ruff check research
+          python -m ruff check research scripts
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m ruff format --check research
+          python -m ruff format --check research scripts
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -v -s research/tests

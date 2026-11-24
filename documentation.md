@@ -28,6 +28,18 @@ Le dépôt de référence associe `ConsoleMode` aux deux modèles. Kelvaroq réi
 
 Le backend étudié annonce à l’invité la plage d’adresses de l’application hôte lors de la configuration graphique. Kelvaroq exécute aujourd’hui le CPU dans un espace virtuel distinct. Reprendre ces bornes telles quelles ferait une promesse que son allocateur ne peut pas tenir. Kelvaroq publie désormais une plage virtuelle invitée et y réserve les deux premiers pools observés. Ces réservations tiennent compte de l’image, de la pile et des autres plages. L’engagement des pages et la liaison aux ressources GPU restent à implémenter. [Configuration mémoire examinée](https://github.com/fxceless/victory-fork/blob/2119b0e44c53aa9648307b0c5c73590290305b1f/crates/victory-gpu/src/device.rs#L197)
 
+### Shaders GFX10 exécutés sur la RTX 5080
+
+Le banc utilise directement le traducteur, la génération de DXIL, la création du pipeline Direct3D 12 et la relecture du tampon du dépôt de référence. La PR 212 seule a échoué **avant création du pipeline**, sur l’instruction scalaire `s_sext_i32_i16`. La PR 182 ajoute la traduction de cette instruction. En combinant leurs arbres de source sur la même base, l’exemple `0xface8000` renvoie bien `0xffff8000` sur la carte. Le banc épingle les deux commits et vérifie que l’arbre combiné a l’identifiant `d12d72e6a39c0313f4292b10f430ca2aac634cd8`. [PR 212](https://github.com/fxceless/victory-fork/pull/212) · [PR 182](https://github.com/fxceless/victory-fork/pull/182)
+
+| Cas exécuté | Vérification locale sur RTX 5080 |
+| --- | --- |
+| Extension de signe sur 8 et 16 bits | Pour chaque largeur, comparer zéro, le plus grand positif, le plus petit négatif et moins un avec un calcul indépendant sur le CPU. Huit comparaisons réussies. |
+| Sélection de texture après une branche | Parmi 32 voies, les 16 premières lisent la texture de valeur 1, les autres la texture de valeur 2. Les 32 valeurs relues correspondent. |
+| Descripteur chargé ou choisi à l’intérieur d’une branche | Les 16 premières voies alternent entre les textures. Les huit suivantes choisissent la première, les huit dernières la seconde. Les 32 valeurs relues correspondent. |
+
+L’adaptateur est sélectionné par nom. Une réussite exclusivement sur un adaptateur logiciel ne valide pas le test. Pour les futurs shaders du jeu, relever le hash du programme, les descripteurs et le mode de vague au point de soumission. Comparer ensuite les résultats du traducteur sur les mêmes entrées. Les mips, les formats compressés, les écritures partielles et les différences wave32/wave64 nécessitent leurs propres cas. [PR sur les modes de vague du cache](https://github.com/fxceless/victory-fork/pull/199) · [PR sur les écritures de canaux](https://github.com/fxceless/victory-fork/pull/146)
+
 ## Jalons mesurables
 
 | Ordre | Livrable | Preuve requise |

@@ -30,6 +30,16 @@ $image = 'D:\images\exemple.exe'
 
 `boot` rend le code de sortie 0 si le point d’entrée revient, 2 si l’exécution invitée s’arrête avec un diagnostic, 1 pour une erreur d’outil ou de chargement. La valeur renvoyée par le programme invité figure dans le JSON. `boot --console series-s` sélectionne le profil Series S. Le choix par défaut est `series-x`. `gpu --adapter 0` limite la sonde à un adaptateur DXGI. Les deux commandes peuvent être exécutées indépendamment.
 
+## Vérifier les shaders sur la RTX 5080
+
+Le banc de référence compile deux révisions précises du traducteur GFX10, exécute les programmes sur l’adaptateur matériel nommé et compare les valeurs relues. Il couvre huit cas d’extension de signe et deux programmes qui sélectionnent des textures différentes selon la voie. Sur la RTX 5080 de développement, les huit résultats entiers et les 64 échantillons de texture concordent.
+
+```powershell
+python scripts/check_shaders.py --adapter 'RTX 5080'
+```
+
+Git et Cargo sont nécessaires. Le premier lancement récupère les révisions, ensuite les objets Git sont conservés sous `target/shader-reference/`. L’option `--source` accepte aussi un clone local contenant les deux commits. Ce banc valide un traducteur externe sur des programmes contrôlés. Le raccordement aux shaders émis pendant le jeu reste à faire.
+
 ## Travailler sur le projet
 
 - Pour construire, relire et tester une modification, suivre les [règles de contribution](CONTRIBUTING.md).
