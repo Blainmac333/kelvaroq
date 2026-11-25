@@ -1,6 +1,8 @@
 #[cfg(windows)]
 mod desktop;
 #[cfg(windows)]
+mod monitor;
+#[cfg(windows)]
 mod gpu;
 mod image;
 #[cfg(windows)]
@@ -194,6 +196,13 @@ fn run(args: Args) -> Result<ExitCode> {
 }
 
 fn main() -> ExitCode {
+    #[cfg(windows)]
+    if let Some(result) = monitor::command() {
+        return match result {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => { eprintln!("{e:#}"); ExitCode::FAILURE }
+        };
+    }
     match run(Args::parse()) {
         Ok(status) => status,
         Err(e) => {

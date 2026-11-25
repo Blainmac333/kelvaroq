@@ -79,7 +79,7 @@ fn estimate(value: Progress, elapsed: Duration) -> String {
     }
 }
 
-fn rect(x: f32, y: f32, w: f32, h: f32) -> D2D_RECT_F {
+pub(crate) fn rect(x: f32, y: f32, w: f32, h: f32) -> D2D_RECT_F {
     D2D_RECT_F {
         left: x,
         top: y,
@@ -88,7 +88,7 @@ fn rect(x: f32, y: f32, w: f32, h: f32) -> D2D_RECT_F {
     }
 }
 
-fn color(rgb: u32, a: f32) -> D2D1_COLOR_F {
+pub(crate) fn color(rgb: u32, a: f32) -> D2D1_COLOR_F {
     D2D1_COLOR_F {
         r: ((rgb >> 16) & 255) as f32 / 255.,
         g: ((rgb >> 8) & 255) as f32 / 255.,
@@ -536,25 +536,43 @@ pub(crate) fn capture_demo(folder: &std::path::Path) -> Result<()> {
                 None,
             );
             display.EndDraw(None, None)?;
-            let stream = wic.CreateStream()?;
-            let file = folder.join(format!("preload-{pct:03}.png"));
-            stream.InitializeFromFilename(
-                &HSTRING::from(file.as_os_str()),
-                windows::Win32::Foundation::GENERIC_WRITE.0,
+            save_png(
+                &wic,
+                &bitmap,
+                &folder.join(format!("preload-{pct:03}.png")),
+                960,
+                540,
             )?;
-            let encoder = wic.CreateEncoder(&GUID_ContainerFormatPng, std::ptr::null())?;
-            encoder.Initialize(&stream, WICBitmapEncoderNoCache)?;
-            let mut encoded = None;
-            encoder.CreateNewFrame(&mut encoded, std::ptr::null_mut())?;
-            let encoded = encoded.context("Création de la capture")?;
-            encoded.Initialize(None)?;
-            encoded.SetSize(960, 540)?;
-            let mut format = GUID_WICPixelFormat32bppBGRA;
-            encoded.SetPixelFormat(&mut format)?;
-            encoded.WriteSource(&bitmap, std::ptr::null())?;
-            encoded.Commit()?;
-            encoder.Commit()?;
         }
+    }
+    Ok(())
+}
+
+pub(crate) fn save_png(
+    wic: &IWICImagingFactory,
+    bitmap: &IWICBitmap,
+    file: &std::path::Path,
+    width: u32,
+    height: u32,
+) -> Result<()> {
+    unsafe {
+        let stream = wic.CreateStream()?;
+        stream.InitializeFromFilename(
+            &HSTRING::from(file.as_os_str()),
+            windows::Win32::Foundation::GENERIC_WRITE.0,
+        )?;
+        let encoder = wic.CreateEncoder(&GUID_ContainerFormatPng, std::ptr::null())?;
+        encoder.Initialize(&stream, WICBitmapEncoderNoCache)?;
+        let mut encoded = None;
+        encoder.CreateNewFrame(&mut encoded, std::ptr::null_mut())?;
+        let encoded = encoded.context("Création de la capture")?;
+        encoded.Initialize(None)?;
+        encoded.SetSize(width, height)?;
+        let mut format = GUID_WICPixelFormat32bppBGRA;
+        encoded.SetPixelFormat(&mut format)?;
+        encoded.WriteSource(bitmap, std::ptr::null())?;
+        encoded.Commit()?;
+        encoder.Commit()?;
     }
     Ok(())
 }

@@ -5,6 +5,10 @@
 mod preload;
 
 #[cfg(windows)]
+#[path = "../monitor/mod.rs"]
+mod monitor;
+
+#[cfg(windows)]
 fn main() -> std::process::ExitCode {
     match launcher::run() {
         Ok(code) => code,
@@ -48,6 +52,7 @@ mod launcher {
     const PICK_FOLDER: usize = 102;
 
     pub(super) fn run() -> Result<ExitCode> {
+        if let Some(result) = crate::monitor::command() { result?; return Ok(ExitCode::SUCCESS); }
         let mut args = std::env::args_os().skip(1).peekable();
         if args.next_if(|a| a == "--preload-demo").is_some() {
             if args.next_if(|a| a == "--capture").is_some() {
