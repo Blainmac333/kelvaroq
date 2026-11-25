@@ -4,7 +4,7 @@
 
 Projet privé de compatibilité Xbox Series X|S pour Windows x64, écrit en Rust avec un moteur CPU de référence pour la recherche. L’objectif est une scène jouable en **3840 × 2160 à 30 images rendues par seconde**, avec ses textures correctes et une cadence régulière sur NVIDIA et AMD.
 
-**État du prototype.** Sur les deux profils, l’image de référence termine ses deux callbacks TLS, lit la topologie console, crée quatre événements et entre dans 36 initialiseurs. L’arrêt actuel survient dans une boucle vectorielle x64 avant la première image du jeu. Une sonde Direct3D 12 indépendante a vérifié huit pixels sur la GeForce RTX 5080 puis sur le circuit Radeon intégré du même PC.
+**Démarrage sur le PC de test.** Le chargeur natif de VIctory exécute le jeu en profil Series X. L’animation de démarrage et le carton du prologue s’affichent sur la RTX 5080. Le journal atteint 30 images/s pendant l’introduction, puis relève 0,3 à 2,4 images/s dans les premiers intervalles du prologue. La surface de présentation de 3840 × 2160 est ajustée à la fenêtre du bureau. Le moteur de recherche de Kelvaroq termine les deux callbacks TLS et entre dans le 72ᵉ initialiseur. [Lancement natif et composants réutilisés](documentation.md#composants-à-reprendre-pour-aller-au-menu)
 
 ## Lancer le paquet Windows
 

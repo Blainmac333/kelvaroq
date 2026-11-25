@@ -49,6 +49,14 @@ Le lecteur x64 du fichier d’origine et le calcul indépendant ont donné les m
 
 La sonde retrouve dix conteneurs DXBC aux tables valides dans `.data`. Les en-têtes DXIL annoncent Shader Model 6.6, un programme vertex et neuf pixel. Dans les dix cas, la zone attribuée au bitcode a une taille de quatre octets et contient `NOBC`. Ces dix zones ne fournissent donc pas de bitcode LLVM à soumettre au pilote PC. Chaque conteneur possède une section `PRIV`, dont la signification reste à déterminer. Il reste aussi à identifier quels programmes le jeu soumet effectivement au GPU.
 
+Dans chacun des dix conteneurs, le lecteur de VIctory identifie un programme natif à partir de `XDAT` et `XBCH` dans la partie DXIL. Il décode 43 instructions dans le vertex shader et, au total, 113 dans les neuf pixel shaders. Son traducteur produit dix programmes hôtes. Avec des états graphiques de test, les pilotes de la RTX 5080 et du Radeon intégré acceptent chacun les neuf paires vertex/pixel. Le banc transmet les conteneurs au lecteur en mémoire. La création d’un état de pipeline atteste l’acceptation de la paire par le pilote. Une soumission provenant du démarrage normal du titre reste à observer. [Source du traducteur utilisé](https://github.com/fxceless/victory-fork/tree/2119b0e44c53aa9648307b0c5c73590290305b1f/crates/victory-shader)
+
+```powershell
+.\.venv\Scripts\python research/check_shader_reference.py $image --reference $clone --draw
+```
+
+Pour le dessin contrôlé, le vertex shader à `0x688e13c` lit les positions et couleurs de trois sommets synthétiques. Le pixel shader à `0x688f346` restitue la couleur interpolée. Après le dessin et l’attente de la fence, les deux pixels du haut de la cible RGBA32F 2 × 2 valent exactement `(0.25, 0.5, 0.75, 1)`. Les deux du bas conservent `(0, 0, 0, 0)`. La relecture concorde sur les deux adaptateurs. Le banc de recherche choisit cette paire. Son usage par le menu reste à tracer.
+
 ## Démarrage effectivement exécuté
 
 | Ordre | RVA | Observation |
@@ -89,11 +97,23 @@ Le premier appel de `GetLogicalProcessorInformation`, à `0x1f676a0`, passe un t
 
 ### Comptage des cœurs et arithmétique des initialiseurs
 
-Les profils Series X et Series S terminent leurs deux callbacks TLS et entrent dans **36 initialiseurs**. L’appel de copie mémoire au retour `0x5dc3f58` et la création d’événement au retour `0x2204215` se terminent. Le titre crée quatre événements et 20 sémaphores, puis effectue huit comparaisons de chaînes via `strcmp`. Les cinq régions engagées totalisent 4 771 020 800 octets en X et 3 052 404 736 en S. La dernière entrée d’initialiseur se trouve à `0x24709c0`. Le moteur de référence s’arrête sur `VPXOR ymm14,ymm8,ymm3` à `0x24716b3`. Les instructions voisines comparent, compactent et extraient des voies vectorielles. Vérifier la séquence complète avec des voies distinctes avant de s’appuyer sur ses résultats. Les deux profils s’arrêtent avant toute présentation invitée.
+Au jalon `4f26dcb`, les profils Series X et Series S entraient dans le 36ᵉ initialiseur, à `0x24709c0`, puis s’arrêtaient sur `VPXOR ymm14,ymm8,ymm3` à `0x24716b3`. Les cinq régions engagées totalisaient 4 771 020 800 octets en X et 3 052 404 736 en S. Les deux listes de cases libres décrites ci-dessous permettent de vérifier le résultat de cette boucle.
+
+Au dernier démarrage vérifié avec le moteur de référence, les deux profils terminent leurs deux callbacks TLS et entrent dans le 72ᵉ initialiseur, à `0x2b8fb20`. Il s’arrête sur `vpsrlq ymm3, ymm0, 2` à la RVA `0x1dd6538`, avant la première présentation du jeu. Le compteur mesure les entrées dans les initialiseurs. L’exécution native avec VIctory est décrite dans [le journal d’architecture](documentation.md#composants-à-reprendre-pour-aller-au-menu).
 
 Le binaire écrit les totaux de cœurs et de processeurs logiques aux RVA `0x71be5c0` et `0x71be5c4`. Sur le PC de développement, ces données valent 7 et 14 avec le modèle console, 16 et 32 avec la topologie Windows. La boucle à `0x1ad0fa4` construit un masque avec un décalage sur 32 bits. Pour 14, le masque vaut `0x3fff`. Pour 32, le décalage repart à zéro et le masque calculé vaut zéro. Une autre routine fournit explicitement `0x3fff` à l’appel d’affinité à `0x577fa9b`. La découverte de topologie fonctionne. Le placement effectif des threads invités reste à implémenter.
 
 La référence corrige aussi des opérations vectorielles atteintes par les initialiseurs. Un test reproduit `VSUBPS` à la RVA `0x4fa34d8` avec deux sources et un ancien destinataire différents. Sur Unicorn 2.1.4, la première voie utilisait la valeur de l’ancien destinataire. Le test impose désormais les quatre différences attendues et la remise à zéro des bits hauts de YMM. Les tests des multiplications-additions fusionnées vérifient le résultat arrondi une seule fois et la restauration de l’environnement flottant de l’hôte.
+
+### Initialisation de deux listes de cases libres
+
+La première boucle, de `0x247164d` à `0x24719f4`, effectue 17 tours. Les 270 mots de 16 bits à `0x75a635c` prennent dans l’ordre les valeurs 1 à 270. Le mot suivant, initialisé à zéro, est la tête de liste. Le prélèvement lit le lien de la case en tête et la restitution réinsère la case libérée. La deuxième boucle effectue 32 tours et écrit les liens 1 à 512 à `0x75a92e0`. La sonde ci-dessous observe chaque sortie pendant le démarrage normal, compare chaque lien et vérifie la préservation des données voisines.
+
+```powershell
+.\.venv\Scripts\python research/check_startup_tables.py $image
+```
+
+Le moteur de référence garde en cache au plus 2 048 décodages x64 par machine virtuelle. La clé inclut l’adresse et les octets relus lors de l’exécution. Sur le PC de développement, pour six mesures alternées sur un programme synthétique de 10 000 tours, la médiane d’une boucle de XOR vectoriel est passée de 459 à 174 ms. Avec un chargement vectoriel en mémoire, elle est passée de 646 à 363 ms. Ces mesures portent sur le décodage pendant une boucle CPU. Le temps d’une image du jeu demande une capture de présentation.
 
 ## Textures, barrières et dessin
 

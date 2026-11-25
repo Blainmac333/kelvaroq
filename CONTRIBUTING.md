@@ -15,7 +15,7 @@
 | `research/kelvaroq_reference/kernel.py`, `crt.py`, `registry.py` | Sémantique des services émulés et état par processus invité. |
 | `research/kelvaroq_reference/graphics_memory.py` | Plages d’adresses virtuelles graphiques, granularité et suivi des réservations invitées. |
 | `research/kelvaroq_reference/synchronization.py` | Handles invités, événements, sémaphores et sémantique des attentes. |
-| `research/kelvaroq_reference/vector.py` | Opérations vectorielles de référence, largeurs et permissions mémoire. |
+| `research/kelvaroq_reference/vector.py`, `vector_operands.py`, `packed_integer.py` | Décodage VEX, lecture des opérandes invités et sémantique des opérations entières par voie. |
 | `scripts/check_shaders.py` | Construit le traducteur de référence à partir des PR épinglées et vérifie ses résultats sur le GPU nommé. |
 | `research/tests/` | Cas minimaux originaux qui exercent le comportement public et les contrats CPU. |
 
