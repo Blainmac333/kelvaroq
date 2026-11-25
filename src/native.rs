@@ -33,6 +33,7 @@ pub(crate) fn run(
     // Give the native file services a conventional DOS path when it names
     // the same file. Keep the extended form for paths that require it.
     let image = dunce::canonicalize(image).context("ouverture de l’exécutable du jeu")?;
+    let desktop_v2 = std::env::var_os("VICTORY_LAUNCHER_UI").is_some_and(|v| v == "1");
     let configure = || -> Result<Command> {
         let mut game = Command::new(engine);
         if experimental_render {
@@ -46,7 +47,12 @@ pub(crate) fn run(
         game.current_dir(engine.parent().context("dossier du moteur natif")?)
             .env(
                 "VICTORY_GAME_DIR",
-                image.parent().context("dossier du jeu")?,
+                if desktop_v2 {
+                    std::env::var_os("VICTORY_GAME_DIR")
+                } else {
+                    None
+                }
+                .unwrap_or_else(|| image.parent().unwrap_or(&image).as_os_str().to_owned()),
             );
         Ok(game)
     };
@@ -64,14 +70,38 @@ pub(crate) fn run(
         // stderr for the error dialog. Give the child its own visible log output.
         unsafe {
             AllocConsole().context("ouverture du journal Windows")?;
-            SetConsoleTitleW(w!("Kelvaroq | Journal du jeu"))?;
+            if desktop_v2 {
+                let caption = format!("Kelvaroq | {}", crate::preload::visual::t("journal"));
+                SetConsoleTitleW(&windows::core::HSTRING::from(caption))?;
+            } else {
+                SetConsoleTitleW(w!("Kelvaroq | Journal du jeu"))?;
+            }
         }
         let log = File::options().write(true).open("CONOUT$")?;
         game.stdout(log.try_clone()?).stderr(log);
     }
-    let status = game
-        .status()
+    let mut child = game
+        .spawn()
         .with_context(|| format!("démarrage de {}", engine.display()))?;
+    let mut monitor =
+        if desktop_v2 && std::env::var_os("VICTORY_LAUNCHER_MONITOR").is_some_and(|v| v == "1") {
+            std::env::var_os("VICTORY_LAUNCHER_EXE").and_then(|exe| {
+                Command::new(exe)
+                    .arg("--monitor")
+                    .arg("--pid")
+                    .arg(child.id().to_string())
+                    .spawn()
+                    .ok()
+            })
+        } else {
+            None
+        };
+    let status = child.wait();
+    if let Some(monitor) = monitor.as_mut() {
+        let _ = monitor.kill();
+        let _ = monitor.wait();
+    }
+    let status = status?;
     if !status.success() {
         bail!("Le moteur natif s’est arrêté ({status}).");
     }

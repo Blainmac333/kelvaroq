@@ -173,6 +173,7 @@ def rust_notices(archive, metadata):
 def package(archive, release, cache, metadata, native):
     mapping = {
         "kelvaroq-launcher.exe": "Kelvaroq.exe",
+        "kelvaroq-desktop.exe": "kelvaroq-desktop.exe",
         "kelvaroq.exe": "kelvaroq-cli.exe",
         "kelvaroq_simd.dll": "kelvaroq_simd.dll",
     }
@@ -283,6 +284,10 @@ def verify(path):
             check=True,
             cwd=tmp,
             env=env,
+        )
+        subprocess.run(
+            [str(copied / "Kelvaroq.exe"), "--ui-demo", "--capture", str(Path(tmp) / "screens")],
+            check=True, cwd=tmp, env=env,
         )
         subprocess.run(
             [str(copied / "native/victory.exe"), "run", "--help"],

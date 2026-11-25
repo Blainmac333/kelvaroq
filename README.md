@@ -129,6 +129,27 @@ When you select a folder, the launcher uses the Series executable declared in `M
 
 The Series X profile presents to a 3840×2160 surface and fits the window to the desktop. Intermediate rendering passes can use other resolutions.
 
+### Desktop launcher preview
+
+Set `VICTORY_LAUNCHER_V2=1` before opening Kelvaroq.exe to use the desktop workspace. The default, `0`, opens the original picker. The workspace accepts the executable declared in MicrosoftGame.Config, including a declared executable in a subfolder. Drop a folder or executable onto the window to change the selection. `Kelvaroq.exe --ui-demo` opens the synthetic workspace. Add `--capture <directory>` to render the launcher, preload and monitor screens in English and French, in both themes.
+
+Settings are stored in `%APPDATA%\Kelvaroq\settings` (schema 2). Storage moves create a dedicated child folder in the selected destination, verify its contents and switch the engine to the new location. Clearing shaders removes the translated shader directory. Clearing title data takes a recovery snapshot first.
+
+Save history stores ZIP archives in `%APPDATA%\Kelvaroq\snapshots`. Each version 1 manifest records the launcher version, engine build, UTC creation time, optional label, directories, file sizes and SHA-256 digests. Restore and import validate the archive and snapshot the current data before replacing it. The default retention keeps the eight latest snapshots and the newest snapshot on each of the last fourteen UTC calendar days. Settings lets you change both limits.
+
+These switches default to enabled within the desktop preview.
+
+| Switch | Effect of setting it to 0 |
+| --- | --- |
+| `VICTORY_LAUNCHER_STORAGE` | Use the engine's standard storage locations or its inherited folder overrides. Hide storage actions. |
+| `VICTORY_SAVE_HISTORY` | Hide save management and disable automatic snapshots. |
+| `VICTORY_SAVE_SNAPSHOTS` | Skip pre-launch and clean-exit snapshots. Manual snapshots and recovery before restore remain available. |
+| `VICTORY_LAUNCHER_DROP` | Disable drag-and-drop selection. |
+| `VICTORY_LAUNCHER_I18N` | Use French and hide the language selector. |
+| `VICTORY_LAUNCHER_NATIVE_STYLE` | Use the original auxiliary-window styling. |
+
+The monitor starts disabled and attaches to the launched engine's process ID when selected. `VICTORY_LAUNCHER_MONITOR=0` suppresses it. Shader preload starts enabled and honours the existing `VICTORY_PIPELINE_PRECOMPILE=0` override. The desktop form uses the .NET Framework 4.8 WPF assemblies supplied by Windows. The package ships the desktop companion alongside the Rust entry point.
+
 ## Build from source
 
 On Windows, use stable Rust with the x64 MSVC target, Visual Studio Build Tools with the Windows SDK, and 64-bit Python 3.11 or later. Run these commands in PowerShell from the repository root.
