@@ -41,6 +41,8 @@ Avec `VICTORY_TEXTURE_NO_WAIT=1`, une texture déjà chargée peut garder son im
 
 XCL envoie les régions modifiées vers ses ressources GPU via un tampon de transfert circulaire et ordonne leur utilisation par une fence entre files. Kelvaroq utilise les tampons de transfert et les fences du fork. Un envoi trop gros pour le budget peut revenir à la file directe pendant que les petits tampons servent aux envois suivants. [Transferts de mémoire paginée de XCL](https://github.com/xcl-dev/xcl/blob/main/crates/xcl/src/hle/d3d12x/sparse.rs)
 
+Avec `VICTORY_ASYNC_SUBMIT=1`, le fil de soumission relâche le verrou de la file invitée pendant qu’il attend une valeur produite par le GPU. Le jeu peut y déposer ses commandes suivantes. La tête de file garde sa place et chaque commande conserve sa fence jusqu’à l’exécution ou l’annulation. Un échec de création du fil de soumission conserve le traitement synchrone.
+
 ### Mesure de la scène lourde
 
 Le témoin s’obtient en appliquant uniquement `0000-render-crate`, `0001-frame-pacing` et `0006-frame-workload` au fork épinglé, avec le même crate de rendu et le même profil de compilation que le candidat. Les deux exécutables produisent les compteurs `KELVAROQ_WORKLOAD=1` et `KELVAROQ_FRAME_TIMINGS=1`. Pour attribuer un changement de coût, comparer les quatre variantes suivantes dans trois blocs dont l’ordre varie.
