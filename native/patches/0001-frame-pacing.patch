@@ -1,5 +1,5 @@
 diff --git a/crates/victory-gpu/src/frame.rs b/crates/victory-gpu/src/frame.rs
-index 798b76069064c94767c7858f88219e47f7158bef..9d7911cc855959665594486b0d9f4bf19168ed02 100644
+index 798b760..9d7911c 100644
 --- a/crates/victory-gpu/src/frame.rs
 +++ b/crates/victory-gpu/src/frame.rs
 @@ -142,6 +142,8 @@ pub(crate) extern "system" fn wait(
@@ -23,10 +23,10 @@ index 798b76069064c94767c7858f88219e47f7158bef..9d7911cc855959665594486b0d9f4bf1
      {
          use crate::copystat::{C, add};
 diff --git a/crates/victory-gpu/src/host.rs b/crates/victory-gpu/src/host.rs
-index cb57a59f989dfa21eb6bbd0b60abe2042c5041fe..d1068ebc53c146662c96ec11bc0f438188b93f97 100644
+index ecf79d5..48c5716 100644
 --- a/crates/victory-gpu/src/host.rs
 +++ b/crates/victory-gpu/src/host.rs
-@@ -5972,7 +5972,11 @@ impl Host {
+@@ -7529,7 +7529,11 @@ impl Host {
              if let Some((buffer, footprint)) = capture {
                  crate::capture::save_read_back(frame, &buffer, &footprint);
              }

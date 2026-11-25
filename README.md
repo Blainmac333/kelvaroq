@@ -4,7 +4,7 @@
 
 Projet privé de compatibilité Xbox Series X|S pour Windows x64, écrit en Rust avec un moteur CPU de référence pour la recherche. L’objectif est une scène jouable en **3840 × 2160 à 30 images rendues par seconde**, avec ses textures correctes et une cadence régulière sur NVIDIA et AMD.
 
-**État sur la RTX 5080.** Le lanceur exécute le jeu avec notre code de rendu et une surface de présentation de 3840 × 2160 en profil Series X. Au démarrage, une fenêtre de 30 intervalles présente une médiane de 33,3 ms. Dans une séquence lourde du prologue, la médiane atteint 601 ms. La cadence cible et la fidélité de toutes les textures restent à atteindre. [Mesures du moteur natif](documentation.md#rendu-natif-de-kelvaroq-sur-le-pc-de-test)
+**État sur la RTX 5080.** Sur une version antérieure, 30 intervalles de démarrage avaient une médiane de 33,3 ms. Le dernier passage de la branche expérimentale avant portage a donné 254,9 ms au p50 et 627,7 ms au p95 sur 699 images lourdes du prologue en 3840 × 2160. Le moteur livré est désormais construit sur le fork `f85101b`. Sa cadence et la qualité de ses textures en jeu restent à mesurer. [Protocole de comparaison](documentation.md#mesure-de-la-scène-lourde)
 
 ## Lancer le paquet Windows
 

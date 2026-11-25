@@ -1,28 +1,11 @@
 diff --git a/crates/victory-gpu/src/draw.rs b/crates/victory-gpu/src/draw.rs
-index aebefdec81c8eee37609b5f04cb1058384de91ec..c33c6c76c45ed8264b5955647113d12256af8f80 100644
+index d6d5fc0..eefcfdc 100644
 --- a/crates/victory-gpu/src/draw.rs
 +++ b/crates/victory-gpu/src/draw.rs
-@@ -183,14 +183,14 @@ pub(crate) struct State {
-     /// Graphics, compute.
-     host_roots: [usize; 2],
-     host_heaps: [usize; 2],
--    /// Tables made afresh in this list: (table, slot count, contents) → first
-+    /// Tables made afresh in this list: (table, slot count, contents) â†’ first
-     /// dynamic slot.
-     fresh_tables: std::collections::HashMap<(u64, u32, u64), u32>,
-     /// The dynamic slots the list holds: title heap, first, count; given
-     /// back when the list has run, is reset or released.
-     dynamic: Vec<(usize, u32, u32)>,
-     /// Root SRVs bound as one-view tables in this list: (title heap, title
--    /// address; 0 for none) → dynamic slot, and the host copy the slot
-+    /// address; 0 for none) â†’ dynamic slot, and the host copy the slot
-     /// shows: later draws of the list bring that one up to date, whatever
-     /// copy the address would find by then (`shadow.rs` `tails`).
-     root_srv_slots: std::collections::HashMap<(usize, u64), RootSlot>,
-@@ -324,6 +324,81 @@ pub(crate) static HEAP_VIEWS_ELSEWHERE: AtomicU64 = AtomicU64::new(0);
- /// index ([`State::heap_buffers`]), and the microseconds they took.
- pub(crate) static HEAP_BUFFER_PASSES: AtomicU64 = AtomicU64::new(0);
- pub(crate) static HEAP_BUFFER_MICROS: AtomicU64 = AtomicU64::new(0);
+@@ -369,6 +369,81 @@ pub(crate) static HEAP_BUFFER_MICROS: AtomicU64 = AtomicU64::new(0);
+ /// picked by index that runs inside it (`heap_textures`), and the buffer
+ /// slots the pass over buffer views looked at; since the last frame line.
+ pub(crate) static HEAP_PASS_PARTS: [AtomicU64; 2] = [const { AtomicU64::new(0) }; 2];
 +
 +#[derive(Clone, Copy)]
 +enum HeapPhase {
@@ -101,7 +84,7 @@ index aebefdec81c8eee37609b5f04cb1058384de91ec..c33c6c76c45ed8264b5955647113d122
  /// Textures brought up to date for shaders that pick them by index
  /// ([`State::heap_textures`]), the bytes of their memory, and the slots
  /// still waiting.
-@@ -1295,7 +1370,9 @@ impl State {
+@@ -1394,7 +1469,9 @@ impl State {
          if FRAME.swap(frame, Ordering::Relaxed) == frame {
              return Some(gpu);
          }
@@ -111,7 +94,7 @@ index aebefdec81c8eee37609b5f04cb1058384de91ec..c33c6c76c45ed8264b5955647113d122
          // Per host heap: the host copy and range each slot's buffer view
          // reads, kept from pass to pass. Only the slots written since the
          // last pass are looked at again (83,000 slots a pass otherwise, 0.1 s
-@@ -1306,12 +1383,14 @@ impl State {
+@@ -1405,12 +1482,14 @@ impl State {
          static RANGES: std::sync::Mutex<Option<std::collections::HashMap<usize, (u64, Ranges)>>> =
              std::sync::Mutex::new(None);
          let mut kept = RANGES.lock().unwrap_or_else(|e| e.into_inner());
@@ -127,7 +110,7 @@ index aebefdec81c8eee37609b5f04cb1058384de91ec..c33c6c76c45ed8264b5955647113d122
              ranges.clear();
              host.buffer_slots()
          } else {
-@@ -1357,6 +1436,7 @@ impl State {
+@@ -1457,6 +1536,7 @@ impl State {
              ranges.insert(index, (shadow, address, address + len));
          }
          let views = ranges.len() as u32;
@@ -135,7 +118,7 @@ index aebefdec81c8eee37609b5f04cb1058384de91ec..c33c6c76c45ed8264b5955647113d122
          // Per host copy, the span its picked views cover.
          let mut spans: std::collections::HashMap<usize, (std::sync::Arc<crate::shadow::Shadow>, u64, u64)> =
              std::collections::HashMap::new();
-@@ -1368,6 +1448,7 @@ impl State {
+@@ -1468,6 +1548,7 @@ impl State {
          }
          drop(kept);
          let bytes: u64 = spans.values().map(|s| s.2 - s.1).sum();
@@ -143,7 +126,7 @@ index aebefdec81c8eee37609b5f04cb1058384de91ec..c33c6c76c45ed8264b5955647113d122
          // Memory that is not write-watched is copied whole by every refresh.
          // It was once refreshed only every 120 frames (unmapped pages read
          // one by one cost 14 GB a frame in run 11, before they were
-@@ -1376,8 +1457,10 @@ impl State {
+@@ -1476,8 +1557,10 @@ impl State {
          // into the opening cutscene; with every frame it ran on). The pass
          // costs some 30 ms a frame this way.
          static WHOLE: std::sync::Mutex<Option<std::collections::HashMap<usize, u64>>> = std::sync::Mutex::new(None);
@@ -156,7 +139,7 @@ index aebefdec81c8eee37609b5f04cb1058384de91ec..c33c6c76c45ed8264b5955647113d122
          for (shadow, from, to) in spans.values() {
              if shadow.unwatched() {
                  // By the copy's number: a copy made where one let go was
-@@ -1392,7 +1475,10 @@ impl State {
+@@ -1492,7 +1575,10 @@ impl State {
                          .unwrap_or(1)
                  });
                  match whole.get(&key) {
@@ -168,18 +151,20 @@ index aebefdec81c8eee37609b5f04cb1058384de91ec..c33c6c76c45ed8264b5955647113d122
                      _ => {
                          whole.insert(key, frame);
                      }
-@@ -1400,7 +1486,9 @@ impl State {
+@@ -1500,9 +1586,11 @@ impl State {
              }
              shadow.refresh(list, *from, to - from);
          }
--        self.heap_textures(list, heap, host);
 +        HeapTiming::mark(&mut timing, HeapPhase::RefreshRecord);
+         let textures_began = std::time::Instant::now();
+-        self.heap_textures(list, heap, host);
 +        self.heap_textures(list, heap, host, timing.as_mut());
+         HEAP_PASS_PARTS[0].fetch_add(textures_began.elapsed().as_micros() as u64, Ordering::Relaxed);
 +        HeapTiming::mark(&mut timing, HeapPhase::TextureWork);
          HEAP_BUFFER_PASSES.fetch_add(1, Ordering::Relaxed);
          HEAP_BUFFER_MICROS.fetch_add(started.elapsed().as_micros() as u64, Ordering::Relaxed);
          static LOGGED: AtomicU64 = AtomicU64::new(0);
-@@ -1417,6 +1505,16 @@ impl State {
+@@ -1519,6 +1607,16 @@ impl State {
                  "buffer views of the heap made ready for shaders that pick them by index"
              );
          }
@@ -196,7 +181,16 @@ index aebefdec81c8eee37609b5f04cb1058384de91ec..c33c6c76c45ed8264b5955647113d122
          Some(gpu)
      }
  
-@@ -1440,6 +1538,7 @@ impl State {
+@@ -1581,7 +1679,7 @@ impl State {
+         }
+         let began = std::time::Instant::now();
+         PASS_BUDGET.set(Some(budget));
+-        self.heap_textures(list, heap, host);
++        self.heap_textures(list, heap, host, None);
+         PASS_BUDGET.set(None);
+         if bake {
+             BAKED_MS.fetch_add(began.elapsed().as_millis() as u64, Ordering::Relaxed);
+@@ -1682,6 +1780,7 @@ impl State {
          list: &HostList,
          heap: &crate::descriptor::Heap,
          host: &crate::descriptor::host::HostHeap,
@@ -204,9 +198,9 @@ index aebefdec81c8eee37609b5f04cb1058384de91ec..c33c6c76c45ed8264b5955647113d122
      ) {
          static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
          if !*ON.get_or_init(|| std::env::var_os("VICTORY_HEAP_TEXTURES").is_none_or(|v| v != "0")) {
-@@ -1470,6 +1569,10 @@ impl State {
-         // wrote since the last pass are due again.
-         host.texture_slots_remapped(frame);
+@@ -1735,6 +1834,10 @@ impl State {
+             host.texture_slots_waiting(frame);
+         }
          let (due, census) = host.texture_slots_due(frame, 4096);
 +        if let Some(t) = timing.as_deref_mut() {
 +            t.due_textures = due.len();
@@ -215,8 +209,8 @@ index aebefdec81c8eee37609b5f04cb1058384de91ec..c33c6c76c45ed8264b5955647113d122
          HEAP_TEXTURES_WAITING.store(census[0], Ordering::Relaxed);
          for (count, now) in HEAP_TEXTURES_QUEUE.iter().zip(census) {
              count.store(now, Ordering::Relaxed);
-@@ -1505,6 +1608,9 @@ impl State {
-             if SPENT.load(Ordering::Relaxed) >= PER_FRAME || began.elapsed() > SPAN {
+@@ -1792,6 +1895,9 @@ impl State {
+             if SPENT.load(Ordering::Relaxed) >= bytes_at_most || began.elapsed() > span {
                  break;
              }
 +            if let Some(t) = timing.as_deref_mut() {

@@ -1,5 +1,36 @@
 # Architecture et décisions
 
+## Moteur natif épinglé au 25 novembre 2026
+
+Le constructeur assemble le fork à `f85101b6095e8cf3cecf8f0647cc7f5428daa177`, applique les correctifs de `native/patches/` dans l’ordre et ajoute les sources de `native/kelvaroq-render/`. Le reçu `build.json` identifie l’arbre Git compilé, chaque correctif et l’exécutable. Le fork inclut le fil de soumission, la file de copie et la PR 220 de Vyacheslav Venglovsky sur les dessins indirects. L’option de récupération en vol vient de la PR 648 de Jonirulah. [Révision du fork](https://github.com/fxceless/victory-fork/tree/f85101b6095e8cf3cecf8f0647cc7f5428daa177)
+
+| Poste mesuré sur l’ancien moteur | Réglages du moteur à comparer |
+| --- | --- |
+| Préparation à la soumission, environ 122 ms par présentation lourde | `VICTORY_WIDE_TEXTURES` et `VICTORY_WIDE_REFRESH` sont actifs. La valeur `0` sérialise chaque opération. `VICTORY_WIDE_THREADS` règle la taille du groupe de travail. `VICTORY_WIDE_COPIES=1` autorise les copies simultanées pour les plages privées indépendantes. Les vues pouvant partager des pages physiques gardent l’ordre d’enregistrement. |
+| Préparation des textures et contention du remappage | `VICTORY_BATCHED_RESIDENCY=0` rétablit les sondes de résidence du fork. `VICTORY_SHORT_REMAP_LOCK=0` maintient le verrou pendant le traitement de la copie. `VICTORY_TEXTURE_NO_WAIT=0` attend le verrou avant la lecture. Ces trois réglages sont actifs par défaut dans le candidat. |
+| Parcours des textures par index | Les passes ordinaires partagent 6 ms par trame invitée, ou 18 ms en rattrapage. `VICTORY_TEXTURE_STAGE_PER_FRAME=0` rétablit 250 ms par passe, ou 750 ms en rattrapage. `VICTORY_TEXTURE_STAGE_US` prime sur `VICTORY_TEXTURE_STAGE_MS`. Les passes anticipées gardent leur budget explicite. |
+| Création des ressources au fil du chargement | Le pool du fork conserve jusqu’à 256 Mio et recycle les tampons jusqu’à 8 Mio. `VICTORY_STAGING_POOL_MB` permet d’essayer les classes de taille Kelvaroq et fixe leur budget. `VICTORY_STAGING_POOL=0` désactive toute réutilisation. `VICTORY_NOT_ZEROED=1` permet d’éviter l’initialisation du seul excédent de capacité d’un tampon neuf. `VICTORY_TEXTURE_HEAPS=1` place les textures échantillonnées dans des plages vierges de tas de 256 Mio. Ces deux expériences sont désactivées par défaut. |
+| Attente des pipelines et dessins écartés | `VICTORY_PIPELINE_WAIT_MS=4` et `VICTORY_PIPELINE_WAIT_ONCE_MS=500` sont les budgets du candidat. Régler les deux à 500 rétablit le budget du fork. Il faut suivre les dessins effectivement émis et la qualité de l’image pour interpréter une baisse de durée. |
+| Remappage de pages, environ 160 ms dans `CopyPageMappings` sur l’ancien moteur | `VICTORY_PAGE_MAPPING_RUNS=1` regroupe les pages consécutives et conserve les alias identiques. `VICTORY_PERSISTENT_VIEWS=1` conserve une vue de section pour les écritures et mémorise les engagements de pages. Les deux sont désactivés par défaut pour pouvoir isoler leur coût. |
+| Attentes de cohérence, environ 128 ms, et récupération des écritures GPU | `VICTORY_CARD_FETCH_INFLIGHT`, `VICTORY_INDIRECT_WINDOW`, `VICTORY_ASYNC_SUBMIT` et `VICTORY_QUEUE2` gardent le défaut 0 du fork. La comparaison de la récupération en vol laisse les trois autres à 0. |
+
+Les correctifs de découpage des plages non alignées et de conservation des invalidations protègent les écritures. Une soumission conserve une référence aux commandes qu’elle traite si le titre libère sa file pendant la préparation. Le test WARP du budget indirect vérifie les deux ordres légitimes de réservation entre groupes et les arguments de chaque dessin. Le détuilage par lignes et la permutation de shader sont désormais fournis par le fork. Les anciens diagnostics DirectStorage `0007` et `0013` restent disponibles dans l’historique de Kelvaroq.
+
+### Mesure de la scène lourde
+
+Le témoin s’obtient en appliquant uniquement `0000-render-crate`, `0001-frame-pacing` et `0006-frame-workload` au fork épinglé, avec le même crate de rendu et le même profil de compilation que le candidat. Les deux exécutables produisent les compteurs `KELVAROQ_WORKLOAD=1` et `KELVAROQ_FRAME_TIMINGS=1`. Pour attribuer un changement de coût, comparer les quatre variantes suivantes dans trois blocs dont l’ordre varie.
+
+| Variante | Moteur et modification | Comparaison |
+| --- | --- | --- |
+| A | Fork instrumenté, réglages du fork | Référence du portage |
+| B | Kelvaroq, réglages par défaut | B contre A |
+| C | B avec seulement `VICTORY_CARD_FETCH_INFLIGHT=1` | C contre B |
+| D | B avec seulement `VICTORY_PAGE_MAPPING_RUNS=1` | D contre B |
+
+Chaque passage réutilise la même sauvegarde et une copie neuve du même cache chaud, au même chemin d’exécution, en profil Series X à 3840 × 2160 sur la RTX 5080, pilote 621.14. Réserver jusqu’à 300 secondes par passage, avec un seul processus du titre et l’accord de l’opérateur avant chaque bloc. Désactiver la génération d’images, supprimer les réglages hérités et laisser `VICTORY_GPU_TIMING` absent de l’environnement. La capture GPU et le compilateur restent hors des passages chronométrés.
+
+Pour chaque passage, publier le nombre d’intervalles entre deux présentations DXGI réussies et consécutives comportant au moins 3 000 dessins invités. Calculer les p50, p95, p99, la moyenne et les charges invitées et hôtes sur ces mêmes intervalles. Consigner la scène, la fidélité visuelle, les pertes de périphérique et les arrêts avec leur RVA. La cible est de 33,3 ms au p50 et de 40 ms au p95, sur au moins 600 images lourdes réparties sur trois passages par variante. Les temps GPU et la part des attentes PCIe demandent une capture distincte.
+
 ## Chemin vers une première image
 
 Le chargeur Rust produit un plan d’image contrôlé. Le worker de référence relit le fichier, vérifie son SHA-256 et le cartographie à sa base préférée dans Unicorn. Les instructions x64 accèdent aux pages invitées. La table des imports dirige les appels vers les services émulés. Les fonctions TLS précèdent le point d’entrée. Les deux commandes `boot` et `gpu` ont aujourd’hui des chemins distincts. Il reste à relier les commandes graphiques invitées au backend.

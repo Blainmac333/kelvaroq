@@ -19,7 +19,7 @@ PATCHES = ROOT / "native/patches"
 RENDER_CRATE = ROOT / "native/kelvaroq-render"
 OUTPUT = ROOT / "target/release/native"
 UPSTREAM = "https://github.com/fxceless/victory-fork.git"
-REVISION = "2119b0e44c53aa9648307b0c5c73590290305b1f"
+REVISION = "f85101b6095e8cf3cecf8f0647cc7f5428daa177"
 PLATFORM = "x86_64-pc-windows-msvc"
 FILES = ("victory.exe", "LICENSE", "source.zip", "build.json")
 

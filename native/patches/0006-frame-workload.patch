@@ -1,8 +1,8 @@
 diff --git a/crates/victory-gpu/src/host.rs b/crates/victory-gpu/src/host.rs
-index d1068ebc53c146662c96ec11bc0f438188b93f97..4ad8dfd932e7c7fc05ddf33bb64bd82ae2f7c96d 100644
+index 48c5716..0e13822 100644
 --- a/crates/victory-gpu/src/host.rs
 +++ b/crates/victory-gpu/src/host.rs
-@@ -5972,7 +5972,7 @@ impl Host {
+@@ -7529,7 +7529,7 @@ impl Host {
              if let Some((buffer, footprint)) = capture {
                  crate::capture::save_read_back(frame, &buffer, &footprint);
              }
@@ -12,10 +12,10 @@ index d1068ebc53c146662c96ec11bc0f438188b93f97..4ad8dfd932e7c7fc05ddf33bb64bd82a
              if let Some(start) = timing {
                  kelvaroq_render::pacing::present(frame, start, std::time::Instant::now(), status.0);
 diff --git a/crates/victory-gpu/src/list.rs b/crates/victory-gpu/src/list.rs
-index 8ce9856899db63109b27ce1017113b665499a20c..80af0f64cf21218a1bbb13fe4a8ce20d7ffac8fa 100644
+index 516ba26..ab12ca3 100644
 --- a/crates/victory-gpu/src/list.rs
 +++ b/crates/victory-gpu/src/list.rs
-@@ -1748,6 +1748,13 @@ extern "system" fn dispatch(_: This) {
+@@ -1758,6 +1758,13 @@ extern "system" fn dispatch(_: This) {
  static DRAWS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
  static DISPATCHES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
  
@@ -30,7 +30,7 @@ index 8ce9856899db63109b27ce1017113b665499a20c..80af0f64cf21218a1bbb13fe4a8ce20d
  /// recorded since the last call.
  pub(crate) fn take_counts() -> (u64, u64) {
 diff --git a/crates/victory-gpu/src/pipeline.rs b/crates/victory-gpu/src/pipeline.rs
-index 60ed05c0c9b169535aff1256cc3443c9ada8dbcc..873f95303bc2ec76631bc05bee7efae295ceb6f6 100644
+index 60ed05c..873f953 100644
 --- a/crates/victory-gpu/src/pipeline.rs
 +++ b/crates/victory-gpu/src/pipeline.rs
 @@ -378,6 +378,18 @@ pub(crate) fn bound(this: This) {
@@ -53,10 +53,10 @@ index 60ed05c0c9b169535aff1256cc3443c9ada8dbcc..873f95303bc2ec76631bc05bee7efae2
          tracing::info!(pipeline = ?this, frame, stage = shader.stage, size = shader.container.len(), hash = %shader.hash, "first bind");
      }
 diff --git a/crates/victory-gpu/src/queue.rs b/crates/victory-gpu/src/queue.rs
-index 11d3a8c8040b74828e8207cae75708d832a57681..9fda3c17e2353e8b0a3ced82140fb5f1b231aa29 100644
+index bccef27..f1b7b36 100644
 --- a/crates/victory-gpu/src/queue.rs
 +++ b/crates/victory-gpu/src/queue.rs
-@@ -745,11 +745,44 @@ fn system_timestamp() -> u64 {
+@@ -862,11 +862,44 @@ fn system_timestamp() -> u64 {
  /// Frames presented so far.
  static FRAMES: AtomicU64 = AtomicU64::new(0);
  
@@ -102,7 +102,7 @@ index 11d3a8c8040b74828e8207cae75708d832a57681..9fda3c17e2353e8b0a3ced82140fb5f1
  /// Shows the first plane's first resource in our window.
  ///
  /// shortcut: one plane, no scaling or placement, the source expected in
-@@ -778,9 +811,8 @@ extern "system" fn present(
+@@ -902,9 +935,8 @@ extern "system" fn present(
      // its fence: a wait is not kept across frames.
      #[cfg(windows)]
      release_held(forces());
