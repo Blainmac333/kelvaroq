@@ -2,6 +2,10 @@
 //! crosses this ABI. The guest's FP environment is isolated from the caller.
 
 #[cfg(target_arch = "x86_64")]
+#[path = "simd_half.rs"]
+mod simd_half;
+
+#[cfg(target_arch = "x86_64")]
 #[path = "simd_vector.rs"]
 mod simd_vector;
 
@@ -20,6 +24,25 @@ pub struct FmaBlock {
 #[link(name = "ucrt")]
 unsafe extern "C" {
     fn tanf(value: f32) -> f32;
+    fn atan2f(y: f32, x: f32) -> f32;
+    fn cosf(value: f32) -> f32;
+    fn sinf(value: f32) -> f32;
+    fn exp2f(value: f32) -> f32;
+    fn acosf(value: f32) -> f32;
+    fn asinf(value: f32) -> f32;
+    fn atanf(value: f32) -> f32;
+    fn cbrtf(value: f32) -> f32;
+    fn ceilf(value: f32) -> f32;
+    fn erff(value: f32) -> f32;
+    fn expf(value: f32) -> f32;
+    fn fmodf(first: f32, second: f32) -> f32;
+    fn log10f(value: f32) -> f32;
+    fn log2f(value: f32) -> f32;
+    fn logf(value: f32) -> f32;
+    fn nextafterf(first: f32, second: f32) -> f32;
+    fn powf(first: f32, second: f32) -> f32;
+    fn remainderf(first: f32, second: f32) -> f32;
+    fn sinhf(value: f32) -> f32;
     fn _errno() -> *mut i32;
 }
 
@@ -37,7 +60,49 @@ pub struct MathF32 {
 #[cfg(all(windows, target_arch = "x86_64"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kelvaroq_tanf(state: *mut MathF32) -> u32 {
+    // SAFETY: retain the original entry point and its pointer contract.
+    unsafe { kelvaroq_math_f32(0, 0, state) }
+}
+
+/// Evaluate a Windows CRT float operation and isolate the guest errno and MXCSR.
+///
+/// # Safety
+/// `state` must be aligned, initialized and writable for the whole call.
+#[cfg(all(windows, target_arch = "x86_64"))]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kelvaroq_math_f32(op: u32, second: u32, state: *mut MathF32) -> u32 {
+    enum Operation {
+        Unary(unsafe extern "C" fn(f32) -> f32),
+        Binary(unsafe extern "C" fn(f32, f32) -> f32),
+    }
+    use Operation::{Binary, Unary};
+    // Stable operation numbers shared with the Python bridge.
+    const OPERATIONS: &[Operation] = &[
+        Unary(tanf),
+        Binary(atan2f),
+        Unary(cosf),
+        Unary(sinf),
+        Unary(exp2f),
+        Unary(acosf),
+        Unary(asinf),
+        Unary(atanf),
+        Unary(cbrtf),
+        Unary(ceilf),
+        Unary(erff),
+        Unary(expf),
+        Binary(fmodf),
+        Unary(log10f),
+        Unary(log2f),
+        Unary(logf),
+        Binary(nextafterf),
+        Binary(powf),
+        Binary(remainderf),
+        Unary(sinhf),
+    ];
     let Some(state) = (unsafe { state.as_mut() }) else {
+        return 1;
+    };
+    let Some(operation) = OPERATIONS.get(op as usize) else {
         return 1;
     };
     if state.mxcsr >> 16 != 0 || state.mxcsr & 0x1f80 != 0x1f80 {
@@ -53,7 +118,12 @@ pub unsafe extern "C" fn kelvaroq_tanf(state: *mut MathF32) -> u32 {
         asm!("stmxcsr [{saved}]", "ldmxcsr [{guest}]",
              saved = in(reg) &mut host_mxcsr, guest = in(reg) &state.mxcsr,
              options(nostack, preserves_flags));
-        state.value = tanf(f32::from_bits(state.value)).to_bits();
+        let first = f32::from_bits(state.value);
+        state.value = match operation {
+            Unary(function) => function(first),
+            Binary(function) => function(first, f32::from_bits(second)),
+        }
+        .to_bits();
         asm!("stmxcsr [{guest}]", "ldmxcsr [{saved}]",
              saved = in(reg) &host_mxcsr, guest = in(reg) &mut state.mxcsr,
              options(nostack, preserves_flags));
@@ -192,5 +262,32 @@ mod tests {
         assert_eq!(state.value, (-0.0f32).to_bits());
         assert_eq!(state.error, 0);
         assert_eq!(control_word(), before);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn crt_domain_error_preserves_host_errno_and_fp_control() {
+        let mut state = MathF32 {
+            value: f32::INFINITY.to_bits(),
+            mxcsr: 0x3f84,
+            error: 0,
+        };
+        let before = control_word();
+        // SAFETY: the pointer belongs to the current thread. Restore its previous errno.
+        let (status, errno_after) = unsafe {
+            let errno = _errno();
+            let saved = *errno;
+            *errno = 71;
+            let status = kelvaroq_math_f32(3, 0, &mut state);
+            let errno_after = *errno;
+            *errno = saved;
+            (status, errno_after)
+        };
+        assert_eq!(status, 0);
+        assert_eq!(errno_after, 71);
+        assert_eq!(control_word(), before);
+        assert!(f32::from_bits(state.value).is_nan());
+        assert_eq!(state.error, 33); // Windows EDOM
+        assert_eq!(state.mxcsr, 0x3f85); // preserve prior divide-by-zero; raise invalid
     }
 }

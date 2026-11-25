@@ -27,6 +27,7 @@ from capstone.x86_const import (
 from unicorn import UC_PROT_EXEC, x86_const
 
 from . import fma
+from .half import HALF_OPS, execute_half
 from .memory import GuestFault, write_guest
 from .packed_integer import INTEGER_OPS, execute_integer
 from .vector_extra import (
@@ -73,6 +74,7 @@ VECTOR_OPS = frozenset(
         *INTEGER_OPS,
         *BROADCAST_BYTES,
         *FMA_OPS,
+        *HALF_OPS,
         *SCALAR_FMA_OPS,
         *LANE_SELECT_OPS,
         *FLOAT128_OPS,
@@ -147,6 +149,8 @@ class VectorMoves:
             for index in range(16):
                 reg = ymm(index)
                 cpu.reg_write(reg, cpu.reg_read(reg) & lower)
+        elif insn.id in HALF_OPS:
+            execute_half(cpu, insn)
         elif insn.id in FMA_OPS or insn.id in SCALAR_FMA_OPS:
             destination, second, third = insn.operands
             width = destination.size

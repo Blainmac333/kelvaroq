@@ -7,9 +7,10 @@ from unicorn.x86_const import (
     UC_X86_REG_RCX,
     UC_X86_REG_RDX,
     UC_X86_REG_XMM0,
+    UC_X86_REG_XMM1,
 )
 
-from .fma import tanf
+from .fma import CRT_MATH_F32, math_f32
 from .memory import DWORD, QWORD, GuestFault, check_access, read_guest, write_guest
 
 
@@ -100,9 +101,11 @@ class Crt:
     def invoke(self, cpu, name):
         arg = cpu.reg_read(UC_X86_REG_RCX)
         result = 0
-        if name == "tanf":
+        if name in CRT_MATH_F32:
             bits = cpu.reg_read(UC_X86_REG_XMM0) & 0xFFFFFFFF
-            state = tanf(bits, cpu.reg_read(UC_X86_REG_MXCSR))
+            # The typed UCRT entry consumes XMM1 only for binary operations.
+            second = cpu.reg_read(UC_X86_REG_XMM1) & 0xFFFFFFFF
+            state = math_f32(name, bits, second, cpu.reg_read(UC_X86_REG_MXCSR))
             if state.error:
                 if self.math_handler:
                     raise GuestFault(

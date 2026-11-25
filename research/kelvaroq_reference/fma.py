@@ -63,18 +63,52 @@ class MathF32(ctypes.Structure):
     ]
 
 
+CRT_MATH_F32 = {
+    "tanf": 0,
+    "atan2f": 1,
+    "cosf": 2,
+    "sinf": 3,
+    "exp2f": 4,
+    "acosf": 5,
+    "asinf": 6,
+    "atanf": 7,
+    "cbrtf": 8,
+    "ceilf": 9,
+    "erff": 10,
+    "expf": 11,
+    "fmodf": 12,
+    "log10f": 13,
+    "log2f": 14,
+    "logf": 15,
+    "nextafterf": 16,
+    "powf": 17,
+    "remainderf": 18,
+    "sinhf": 19,
+}
+
+
 @cache
-def native_tanf(path):
-    function = getattr(native_library(path), "kelvaroq_tanf", None)
+def native_math_f32(path):
+    function = getattr(native_library(path), "kelvaroq_math_f32", None)
     if function is None:
-        raise GuestFault("tanf requires the x64 Windows math backend")
-    function.argtypes = [ctypes.POINTER(MathF32)]
+        raise GuestFault("CRT math requires the x64 Windows math backend")
+    function.argtypes = [ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(MathF32)]
     function.restype = ctypes.c_uint32
     return function
 
 
-def tanf(value, mxcsr):
+def math_f32(name, value, second, mxcsr):
     state = MathF32(value, mxcsr, 0)
-    if native_tanf(os.environ.get("KELVAROQ_SIMD_LIB"))(ctypes.byref(state)):
-        raise GuestFault("guest tanf requires unsupported MXCSR or unmasked exceptions")
+    function = native_math_f32(os.environ.get("KELVAROQ_SIMD_LIB"))
+    status = function(CRT_MATH_F32[name], second, ctypes.byref(state))
+    if status == 3:
+        raise GuestFault(
+            f"guest {name} requires unsupported MXCSR or unmasked exceptions"
+        )
+    if status:
+        raise GuestFault(f"native CRT backend rejected {name} (status {status})")
     return state
+
+
+def tanf(value, mxcsr):
+    return math_f32("tanf", value, 0, mxcsr)

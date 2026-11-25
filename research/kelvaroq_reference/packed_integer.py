@@ -41,7 +41,13 @@ WIDEN = {
     ins.X86_INS_VPMOVSXBD: ("b", "i"),
     ins.X86_INS_VPMOVZXWD: ("H", "I"),
 }
-EXTRACT = {ins.X86_INS_VPEXTRB: 1, ins.X86_INS_VPEXTRW: 2, ins.X86_INS_VEXTRACTI128: 16}
+EXTRACT = {
+    ins.X86_INS_VPEXTRB: 1,
+    ins.X86_INS_VPEXTRW: 2,
+    ins.X86_INS_VPEXTRD: 4,
+    ins.X86_INS_VEXTRACTI128: 16,
+}
+SIGNED_SELECT = {ins.X86_INS_VPMINSD: min, ins.X86_INS_VPMAXSD: max}
 MOVE = {ins.X86_INS_VMOVD: 4, ins.X86_INS_VMOVQ: 8}
 MASKED_MOVES = {ins.X86_INS_VPMASKMOVD: 4, ins.X86_INS_VPMASKMOVQ: 8}
 INTEGER_OPS = frozenset(
@@ -54,8 +60,10 @@ INTEGER_OPS = frozenset(
         *COMPARE,
         *MOVE,
         *EXTRACT,
+        *SIGNED_SELECT,
         ins.X86_INS_VPERMQ,
         ins.X86_INS_VPSLLD,
+        ins.X86_INS_VPSLLVD,
         *MASKED_MOVES,
     )
 )
@@ -101,6 +109,12 @@ def binary_lanes(op, a, b):
         return bits.to_bytes(len(a), "little")
     if op in PACK:
         return pack_signed(op, a, b)
+    if op in SIGNED_SELECT:
+        select = SIGNED_SELECT[op]
+        layout = struct.Struct("<" + "i" * (len(a) // 4))
+        return layout.pack(
+            *(select(x, y) for x, y in zip(layout.unpack(a), layout.unpack(b)))
+        )
     comparing = op in COMPARE
     element, operation = (COMPARE if comparing else ARITHMETIC)[op]
     size = struct.calcsize("<" + element)
@@ -143,18 +157,21 @@ def execute_integer(cpu, instruction):
         data = struct.pack(
             "<4Q", *(lanes[(extra[0].imm >> shift) & 3] for shift in (0, 2, 4, 6))
         )
-    elif op == ins.X86_INS_VPSLLD:
+    elif op in (ins.X86_INS_VPSLLD, ins.X86_INS_VPSLLVD):
         shift = extra[0]
-        count = (
-            shift.imm
-            if shift.type == ins.X86_OP_IMM
-            else int.from_bytes(read(shift, 16)[:8], "little")
-        )
-        values = struct.iter_unpack("<I", read(src, width))
-        data = (
-            b"".join(struct.pack("<I", (n << count) & 0xFFFFFFFF) for (n,) in values)
-            if count < 32
-            else bytes(width)
+        layout = struct.Struct(f"<{width // 4}I")
+        if op == ins.X86_INS_VPSLLVD:
+            counts = layout.unpack(read(shift, width))
+        else:
+            count = (
+                shift.imm
+                if shift.type == ins.X86_OP_IMM
+                else int.from_bytes(read(shift, 16)[:8], "little")
+            )
+            counts = (count,) * (width // 4)
+        values = layout.unpack(read(src, width))
+        data = layout.pack(
+            *((n << c) & 0xFFFFFFFF if c < 32 else 0 for n, c in zip(values, counts))
         )
     else:
         data = binary_lanes(op, read(src, width), read(extra[0], width))

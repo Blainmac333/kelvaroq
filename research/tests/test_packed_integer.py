@@ -59,6 +59,40 @@ class PackedIntegerTests(unittest.TestCase):
         self.put(x.UC_X86_REG_YMM1, struct.pack("<4q", 0, -2, -1, 5))
         self.expect_vector("c4 e2 7d 37 d1", struct.pack("<4q", 0, -1, -1, 0))
 
+    def expect_aliased(self, code, destination, left, right, expected):
+        self.put(x.UC_X86_REG_YMM0, left)
+        self.put(x.UC_X86_REG_YMM1, right)
+        self.step(code)
+        actual = self.cpu.reg_read(destination).to_bytes(32, "little")
+        self.assertEqual(actual, expected.ljust(32, b"\x00"))
+
+    def test_variable_left_shift_takes_a_count_from_each_dword(self):
+        self.expect_aliased(
+            "c4 e2 7d 47 c1",
+            x.UC_X86_REG_YMM0,
+            struct.pack("<8I", 0xFF01, 0x7FFFFFFF, 3, 5, 7, 9, 0xF0000011, 0xC0000003),
+            struct.pack("<8I", 0, 1, 31, 32, 33, 0xFFFFFFFF, 4, 2),
+            struct.pack("<8I", 0xFF01, 0xFFFFFFFE, 0x80000000, 0, 0, 0, 0x110, 12),
+        )
+
+    def test_signed_min_max_compare_opposite_signs_and_endpoints(self):
+        left = struct.pack("<8i", -(2**31), 2**31 - 1, -8, 0, 77, -99, 0, -1)
+        right = struct.pack("<8i", 2**31 - 1, -(2**31), -7, 0, 7, -199, -1, 0)
+        self.expect_aliased(
+            "c4 e2 7d 39 c9",
+            x.UC_X86_REG_YMM1,
+            left,
+            right,
+            struct.pack("<8i", -(2**31), -(2**31), -8, 0, 7, -199, -1, -1),
+        )
+        self.expect_aliased(
+            "c4 e2 79 3d c1",
+            x.UC_X86_REG_YMM0,
+            left,
+            right,
+            struct.pack("<4i", 2**31 - 1, 2**31 - 1, -7, 0),
+        )
+
     def test_pack_signed_dwords_saturates_within_each_128_bit_lane(self):
         self.put(
             x.UC_X86_REG_YMM0,
