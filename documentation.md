@@ -16,6 +16,27 @@ Le constructeur assemble le fork à `f85101b6095e8cf3cecf8f0647cc7f5428daa177`, 
 
 Les correctifs de découpage des plages non alignées et de conservation des invalidations protègent les écritures. Une soumission conserve une référence aux commandes qu’elle traite si le titre libère sa file pendant la préparation. Le test WARP du budget indirect vérifie les deux ordres légitimes de réservation entre groupes et les arguments de chaque dessin. Le détuilage par lignes et la permutation de shader sont désormais fournis par le fork. Les anciens diagnostics DirectStorage `0007` et `0013` restent disponibles dans l’historique de Kelvaroq.
 
+### Placement mémoire et soumission
+
+Les options ci-dessous sont désactivées par défaut. Elles se règlent avant le démarrage du moteur. La valeur en Mio est un plafond pour l’ensemble du processus.
+
+| Réglage | Effet dans le moteur |
+| --- | --- |
+| `VICTORY_GPU_UPLOAD_READONLY_MB` | Place les constantes, sommets temporaires et tables de pas de descripteurs écrits par le CPU dans un tas `GPU_UPLOAD`, si le périphérique et son budget DXGI le permettent. Le pilote libère la réservation à la destruction de la dernière référence. Le chemin de repli utilise un tas `UPLOAD`. |
+| `VICTORY_CARD_READONLY_MB` | Alloue en VRAM les petites ressources enregistrées sans accès UAV. Le miroir CPU en RAM conserve les écritures faites via un alias. Le budget est distinct de celui des grandes ressources. |
+| `VICTORY_GPU_CONSTANT_FILLS=1` | Essaie une copie GPU pour les constantes de table couvertes par une écriture GPU antérieure et dont l’ordre peut être établi. Les autres constantes conservent leur remplissage à la soumission. |
+| `VICTORY_RECYCLE_COMPARE_SLOTS=1` | Réutilise les emplacements des comparaisons une fois la soumission terminée et ses résultats lus. Le journal compte séparément les attentes dues à l’espace de résultats. |
+| `VICTORY_RELAY_COPY_RUNS=1` | Regroupe deux copies de relecture qui se suivent dans le même tampon GPU et dans le tampon de destination. Chaque morceau conserve ensuite sa propre vérification des écritures CPU. |
+| `VICTORY_SCOPED_CARD_BARRIERS=1` | Avec la récupération en vol, ordonne la lecture des résultats de comparaison sur le seul tampon qui les transmet au traitement suivant. La première barrière de la liste couvre toujours toutes les écritures invitées. |
+| `VICTORY_SCATTER_RUNS=1` | Regroupe les pages contiguës pour les opérations Scatter. Les destinations déjà occupées, les alias et les échecs conservent les effets et l’ordre des opérations page par page. |
+| `VICTORY_DESCRIPTOR_SYNC_BATCH=1` | Compare par groupes les enregistrements de descripteurs écrits en mémoire invitée. Les écritures par l’API et les restaurations par copie brute sont prises en compte. |
+| `VICTORY_ROOT_BIND_CACHE=1` | Mémorise les constantes, adresses et tables déjà liées à chaque paramètre de la liste D3D12. Les dessins et les calculs conservent chacun leur propre état. |
+| `VICTORY_PIPELINE_EARLY_WITHOUT_LIBRARY=1` | Conserve la liste des pipelines à préparer lors du prochain démarrage quand le pilote ne fournit pas de bibliothèque D3D12. |
+
+Le placement `GPU_UPLOAD` et la restitution du budget à la dernière référence s’appuient sur les travaux de 0xkn0wh3r3. Les petits buffers dont le contenu peut être modifié via un alias utilisent le mécanisme de comparaison du fork. [Proposition amont sur le placement en VRAM](https://github.com/Marvisak/VIctory/pull/2120) · [Proposition amont sur le miroir CPU](https://github.com/Marvisak/VIctory/pull/2130)
+
+Avec `VICTORY_TEXTURE_NO_WAIT=1`, une texture déjà chargée peut garder son image pendant une tentative de remappage. Le premier chargement et une deuxième tentative consécutive attendent une vue stable des pages. Pour les textures à mipmaps éparses, la sélection des niveaux et la lecture de leur contenu utilisent la même vue mémoire.
+
 ### Mesure de la scène lourde
 
 Le témoin s’obtient en appliquant uniquement `0000-render-crate`, `0001-frame-pacing` et `0006-frame-workload` au fork épinglé, avec le même crate de rendu et le même profil de compilation que le candidat. Les deux exécutables produisent les compteurs `KELVAROQ_WORKLOAD=1` et `KELVAROQ_FRAME_TIMINGS=1`. Pour attribuer un changement de coût, comparer les quatre variantes suivantes dans trois blocs dont l’ordre varie.

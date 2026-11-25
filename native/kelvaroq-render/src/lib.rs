@@ -1,5 +1,6 @@
 //! Rendering logic shared by the native backend and hardware-independent tests.
 
+pub mod compare_slots;
 pub mod dirty_ranges;
 pub mod heap_ranges;
 pub mod pacing;
