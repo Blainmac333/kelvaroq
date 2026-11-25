@@ -60,7 +60,7 @@ A tester played a build from this public repository and monitored it, on a Ryzen
 
 **Tester's verdict:** stable for 36 minutes, about 10 fps overall and 11 fps after loading, still far from smooth. An overall CPU use of about 15 % does not locate the bottleneck. A single saturated thread, the GPU or render synchronisation could each be the limit. Our own measurements, described above and in the documentation, point to the thread that prepares and submits GPU work.
 
-**Limits:** one session only. What was on screen (menu, active play or a static scene) was not confirmed. The monitor was restarted once, and the first monitoring targeted the launcher process.
+**Limits:** one session only, covering the prologue and the first mission. The monitor was restarted once, and the first monitoring targeted the launcher process.
 
 ## Milestones
 
