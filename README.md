@@ -39,6 +39,29 @@ The before and after runs used the same save and the same warm pipeline cache fo
 
 The three runs of the initial victory-fork port had heavy-frame medians of 215, 235 and 255 ms.
 
+### External playtest: one 36-minute session
+
+A tester played a build from this public repository and monitored it. Their hardware was not reported. The session ran for **36 min 46 s without a crash**. The game was still open and responsive when monitoring stopped, and no new `*.crash.log` file appeared.
+
+| Metric | Value |
+| --- | ---: |
+| Monitoring time | 36 min 46 s |
+| Samples | 68 |
+| Mean fps | 10 |
+| Median fps | 11 |
+| Max / min fps | 20 / 1 |
+| Steady state, after 10 min | 10.9 fps mean, about 9 minimum |
+| Frame time, steady state | about 92 ms |
+| CPU use, steady state | about 15 % overall |
+
+- **0 to 9 min, loading:** fps swung between about 1 and 20, with six samples at 4 fps or less. The last dip came at 8 min 45 s.
+- **After 10 min:** fps stayed between about 9 and 12, with no further marked dip, for the remaining 26 min 46 s.
+- **RAM:** a 15.5 GB peak at the start, then about 10.5 GB until 33 min, then about 7 GB until the end. Memory did not keep rising during this session, although one session cannot rule out a leak.
+
+**Tester's verdict:** stable for 36 minutes, about 10 fps overall and 11 fps after loading, still far from smooth. An overall CPU use of about 15 % does not locate the bottleneck. A single saturated thread, the GPU or render synchronisation could each be the limit. Our own measurements, described above and in the documentation, point to the thread that prepares and submits GPU work.
+
+**Limits:** one session only. What was on screen (menu, active play or a static scene) was not confirmed. The monitor was restarted once, and the first monitoring targeted the launcher process.
+
 ## Milestones
 
 - [x] Inspect PE files and run the title's startup in a Unicorn-based CPU reference engine.
