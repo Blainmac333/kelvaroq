@@ -32,6 +32,7 @@ Les options ci-dessous sont désactivées par défaut. Elles se règlent avant l
 | `VICTORY_DESCRIPTOR_SYNC_BATCH=1` | Compare par groupes les enregistrements de descripteurs écrits en mémoire invitée. Les écritures par l’API et les restaurations par copie brute sont prises en compte. |
 | `VICTORY_ROOT_BIND_CACHE=1` | Mémorise les constantes, adresses et tables déjà liées à chaque paramètre de la liste D3D12. Les dessins et les calculs conservent chacun leur propre état. |
 | `VICTORY_PIPELINE_EARLY_WITHOUT_LIBRARY=1` | Conserve la liste des pipelines à préparer lors du prochain démarrage quand le pilote ne fournit pas de bibliothèque D3D12. |
+| `VICTORY_WAVE_ZERO_MASK=1` | Traduit directement les deux moitiés d’un masque wave64 prouvé nul dans une branche divergente. Les masques dynamiques continuent de requérir la synchronisation des deux demi-vagues. Le cache de shaders distingue les deux modes. |
 
 Le placement `GPU_UPLOAD` et la restitution du budget à la dernière référence s’appuient sur les travaux de 0xkn0wh3r3. Les petits buffers dont le contenu peut être modifié via un alias utilisent le mécanisme de comparaison du fork. [Proposition amont sur le placement en VRAM](https://github.com/Marvisak/VIctory/pull/2120) · [Proposition amont sur le miroir CPU](https://github.com/Marvisak/VIctory/pull/2130)
 
