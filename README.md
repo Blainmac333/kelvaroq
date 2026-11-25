@@ -124,16 +124,18 @@ These documents are written in French.
 
 ## Credits
 
+Kelvaroq is developed by **Stellarr Studio SAS**, a French company ([stellarrstudio.com](https://stellarrstudio.com)). All of its development is done with [Moon AI](https://realmoon.ai).
+
 - **VIctory**, by Marvisak and contributors, provides the native engine's loader, runtime services, Direct3D 12 renderer and shader recompiler. Its license is GPL-3.0-or-later. [VIctory](https://github.com/Marvisak/VIctory)
 - **victory-fork**, by fxceless and contributors, provides the pinned revision to which Kelvaroq applies `native/patches`. Its license is GPL-3.0-or-later. [victory-fork](https://github.com/fxceless/victory-fork)
 - **Unicorn** runs the CPU reference engine and is licensed under GPLv2. [Unicorn](https://github.com/unicorn-engine/unicorn)
-- **AI tools:** the AI tools used in this project are [Moon AI](https://realmoon.ai).
+- **AI tools:** the AI tools used in this project are [Moon AI](https://realmoon.ai); all of the work is done through it.
 
 Kelvaroq provides the launcher, the `native/kelvaroq-render` rendering crate, the patches in `native/patches`, the reference engine and the measurement tools.
 
 ## License
 
-Kelvaroq is free software. Copyright © 2026 Stellarr Studio and the Kelvaroq contributors.
+Kelvaroq is free software. Copyright © 2026 Stellarr Studio SAS and the Kelvaroq contributors.
 
 - The repository is licensed under **GPL-3.0-or-later**, the license of VIctory, from which the patches and the native engine in the Windows package derive. [Repository license](LICENSE)
 - The `research/` directory is licensed under **GPL-2.0-or-later** because the reference engine imports Unicorn, which is licensed under GPLv2 only. [Research license](research/LICENSE)
@@ -143,3 +145,62 @@ The Windows package includes the native engine source in `sources/native.zip` an
 ## Disclaimer
 
 This repository contains no game files, game code or game assets. You supply the game from your own copy. Kelvaroq is not affiliated with or endorsed by any game developer or publisher.
+
+## Legal Notice — Software Interoperability and European Union Law
+
+This project is an independent, unaffiliated, open-source software interoperability initiative maintained by Stellarr Studio SAS, a company registered in France ([stellarrstudio.com](https://stellarrstudio.com)), and by developers residing in the European Union.
+
+Its purpose is to research, document and independently implement software interfaces and compatibility mechanisms that enable interoperability between independently developed software and existing computer programs.
+
+### European Legal Framework
+
+The project acknowledges and relies, where applicable, on the statutory rights and exceptions established by Directive 2009/24/EC of the European Parliament and of the Council of 23 April 2009 on the legal protection of computer programs, particularly:
+
+- **Article 1(2):** Exclusion of underlying ideas, principles and interface principles from copyright protection as such.
+- **Article 5(2) and (3):** Statutory exceptions concerning necessary backup copies and the observation, study and testing of computer programs.
+- **Article 6:** Decompilation where indispensable to achieve the interoperability of independently created computer programs, subject to the conditions established therein.
+- **Article 8(2):** Invalidity of contractual provisions contrary to the aforementioned mandatory exceptions.
+
+Where French law applies, these principles are implemented notably through Articles L.122-6-1 and L.331-5 of the French Intellectual Property Code.
+
+Relevant case law includes:
+
+- CJEU, *SAS Institute Inc. v World Programming Ltd*, C-406/10, 2 May 2012.
+- CJEU, *Nintendo Co. Ltd and Others v PC Box Srl and 9Net Srl*, C-355/12, 23 January 2014.
+- CJEU, *Top System SA v État belge*, C-13/20, 6 October 2021.
+- CJEU, *Sony Computer Entertainment Europe Ltd v Datel Design and Development Ltd and Others*, C-159/23, 17 October 2024.
+
+### Intellectual Property and Lawful Use
+
+This project does not claim ownership of any third-party intellectual property.
+
+The repository does not distribute proprietary game binaries, copyrighted game assets, proprietary source code, unauthorized cryptographic keys, or unauthorized copies of third-party software.
+
+Users must independently obtain and hold a lawful right to use any third-party software required by this project. Any files supplied to the project must be lawfully obtained and used in accordance with applicable legislation.
+
+The use of leaked, stolen, or otherwise unlawfully distributed software is not supported or endorsed.
+
+This project does not authorize or encourage copyright infringement, unauthorized distribution, or unlawful circumvention of technological protection measures.
+
+### Independent Development
+
+Contributions must respect applicable intellectual property laws. Reverse engineering and decompilation activities must remain within the scope of applicable statutory exceptions.
+
+The project's open-source license applies exclusively to original contributions and material for which the project has the necessary distribution rights.
+
+All third-party trademarks and intellectual property remain the property of their respective owners. No affiliation, endorsement, or sponsorship is implied.
+
+### Rights Holder Inquiries
+
+Rights holders who believe that specific repository content infringes their intellectual property rights are invited to identify the relevant files, code sections, protected works, and legal grounds for their claim through the project's designated contact channel ([stellarrstudio.com](https://stellarrstudio.com)).
+
+The maintainers are committed to reviewing legitimate intellectual property concerns in good faith while reserving all rights and statutory exceptions available under applicable law.
+
+Nothing in this notice is intended to exclude applicable laws or confer rights beyond those recognized by the relevant jurisdiction.
+
+### Legal References
+
+- Directive 2009/24/EC: https://eur-lex.europa.eu/eli/dir/2009/24/oj
+- Directive 2001/29/EC: https://eur-lex.europa.eu/eli/dir/2001/29/oj
+- Regulation (EU) 2022/2065 — Digital Services Act: https://eur-lex.europa.eu/eli/reg/2022/2065/oj
+- French Intellectual Property Code: https://www.legifrance.gouv.fr/codes/id/LEGITEXT000006069414/
