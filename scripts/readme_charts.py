@@ -18,6 +18,7 @@ MILESTONES = [
     (("Ported to", "victory-fork"), "patches 0001–0037", 235.0, "~235 ms"),
     (("Memory and", "submission"), "patches 0038–0040", 198.3, "198.3 ms"),
     (("Mesh launch,", "wide hash"), "patches 0041–0042", 119.8, "119.8 ms"),
+    (("Copies, pages,", "async present"), "patches 0044–0048", 108.5, "108.5 ms"),
 ]
 TARGET = 33.3
 

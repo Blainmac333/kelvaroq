@@ -10,12 +10,14 @@ Kelvaroq is an Xbox Series X|S compatibility runtime for Windows x64, written in
 
 **The prologue is playable at about 10 rendered fps in typical views and 7 to 8 fps in its heaviest scenes.** All measurements below are from the prologue at 3840×2160 on an RTX 5080. A heavy frame is a present with at least 3,000 draws.
 
-Patches 0041–0042 cut median heavy-frame time from 198.3 to 119.8 ms. The CPU now limits heavy frames to about 120 ms each. About 7% of draws have no host pipeline because some shaders fail to translate or are rejected. Textures wait for space when VRAM is full.
+Verified in play: the menus work, the character can be controlled, the HUD is shown, the game pauses, and sessions have run without a crash.
+
+Patches 0041–0042 cut median heavy-frame time from 198.3 to 119.8 ms, and patches 0044–0048 to 108.5 ms. The thread that prepares and submits GPU work now limits heavy frames: the GPU waits for it. About 7% of draws are still dropped, mostly because ray-tracing structures are not built yet. Textures wait for space when VRAM is full.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/charts/milestones-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="assets/charts/milestones-light.svg">
-  <img src="assets/charts/milestones-light.svg" alt="Median heavy-frame time fell from 254.9 ms before the port to 119.8 ms with patches 0041–0042. The 30 fps target is 33.3 ms.">
+  <img src="assets/charts/milestones-light.svg" alt="Median heavy-frame time fell from 254.9 ms before the port to 119.8 ms with patches 0041–0042 and 108.5 ms with patches 0044–0048. The 30 fps target is 33.3 ms.">
 </picture>
 
 <picture>
@@ -32,6 +34,7 @@ The before and after runs used the same save and the same warm pipeline cache fo
 | Port to victory-fork, 0001–0037 | ~235 ms | — | — | — | — | — |
 | Memory and submission, 0038–0040 (before) | 198.3 ms | 312.4 ms | 221.1 ms | 4.5 | 959 | ~78% |
 | Mesh launch and wide hash, 0041–0042 (after) | 119.8 ms | 207.8 ms | 137.0 ms | 7.3 | 1,564 | ~35% |
+| In-process copies, changed pages, async present, 0044–0048 | 108.5 ms | 261.5 ms | 132.2 ms | 7.6 | 1,648 | ~30% |
 | 30 fps target | 33.3 ms | — | — | — | — | — |
 
 The three runs of the initial victory-fork port had heavy-frame medians of 215, 235 and 255 ms.
