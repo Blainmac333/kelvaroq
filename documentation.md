@@ -59,6 +59,33 @@ Chaque passage réutilise la même sauvegarde et une copie neuve du même cache 
 
 Pour chaque passage, publier le nombre d’intervalles entre deux présentations DXGI réussies et consécutives comportant au moins 3 000 dessins invités. Calculer les p50, p95, p99, la moyenne et les charges invitées et hôtes sur ces mêmes intervalles. Consigner la scène, la fidélité visuelle, les pertes de périphérique et les arrêts avec leur RVA. La cible est de 33,3 ms au p50 et de 40 ms au p95, sur au moins 600 images lourdes réparties sur trois passages par variante. Les temps GPU et la part des attentes PCIe demandent une capture distincte.
 
+### Architecture mémoire et soumission (correctifs 0038 à 0040)
+
+**Diagnostic.** Sur les images lourdes du prologue (≥ 3 000 dessins, journal perf4), la file GPU a du travail 80 à 93 % du temps. Le fil de soumission attend la carte ~214 ms par image en médiane, et la raison consignée est à 100 % la relecture de mémoire du titre par un « fill » de constantes. Le code du titre ne représente que ~5 % du CPU actif. Deux défauts de conception expliquent ces chiffres :
+- les constantes des tables de descripteurs étaient copiées par le CPU à la soumission, depuis une mémoire que des shaders en vol écrivent ;
+- les copies que le GPU ne fait que lire (fenêtres hors buffers, ~3,3 Go, et petits buffers) restaient en RAM système, lues à travers PCIe à chaque dessin.
+
+Le module `fill_ahead` lisait ces constantes en avance sans attendre. Dès qu'un vol en modifiait une, il basculait définitivement en attente pour **tous** les fills : 15 attentes et 170 à 590 ms par image.
+
+| Décision | Mécanisme | Interrupteur (défaut) |
+| --- | --- | --- |
+| Les constantes de table se lisent sur la copie GPU, dans l'ordre de la file | Vue de constantes créée sur la copie hôte, alignée sur 256 octets, avec rafraîchissement de la plage avant la liste. Elle lit aussi juste les constantes qu'un dispatch de la même soumission écrit. Les autres restent copiées | `VICTORY_DIRECT_CONSTANTS` (actif) |
+| Une attente de fill ne touche que les 64 Kio où un vol a changé des constantes lues | `fill_ahead` garde l'ensemble des blocs concernés au lieu d'un interrupteur global | `VICTORY_FILL_WAIT=1` attend toujours |
+| Ce que le GPU ne fait que lire réside en VRAM visible du CPU (ReBAR) | Fenêtres et buffers créés sans accès non ordonné : un seul tampon `GPU_UPLOAD`, que le CPU remplit à la soumission et que le GPU lit à la vitesse de la VRAM. Il n'est jamais relu par le CPU (~30 Mo/s mesurés). Budget comptabilisé jusqu'à la dernière libération ; un dixième du budget et la réserve des cibles restent libres | `VICTORY_REBAR_COPIES_MB` (2048) |
+| Les buffers que les shaders écrivent ont une copie en VRAM dès 64 Kio | Chemin de copie en mémoire carte du fork : comparaison et récupération sur la carte, au lieu de lectures et d'atomiques à travers PCIe | `VICTORY_CARD_BUFFERS_MIN_KB` (64) |
+| La soumission quitte le fil du titre | File de soumission du fork, préparée par un fil `victory-submit` | `VICTORY_ASYNC_SUBMIT` (actif) |
+| Les envois et récupérations passent par le moteur de copie | Deux files de copie avec fences croisées, sans attente circulaire possible | `VICTORY_QUEUE2` (3, les deux voies) |
+
+**Vérifications.**
+- Toute la suite de tests du moteur natif passe.
+- Les tests de bout en bout sur l'adaptateur logiciel (copies en mémoire carte, files de copie, soumission asynchrone) passent avec et sans `VICTORY_QUEUE2`.
+- Le test `rebar_copy_bytes_reach_the_card_and_the_charge_goes_with_the_buffer` passe sur la RTX 5080.
+- Aucun passage en jeu n'a encore été fait avec ces correctifs : la mesure suit le protocole ci-dessus.
+
+**Reste à construire.**
+- **Cohérence paresseuse.** Les écritures GPU restent sur la carte. Elles ne seraient recopiées en RAM que sur faute d'accès du CPU, au lieu de l'atterrissage systématique (~50 ms par image sur le fil relay). Ça demande que les chemins qui lisent la mémoire du titre par le noyau consultent l'état des pages avant de lire.
+- **Traduction des commandes hors des fils du titre**, avec un cache de l'état traduit d'une image à l'autre.
+
 ## Chemin vers une première image
 
 Le chargeur Rust produit un plan d’image contrôlé. Le worker de référence relit le fichier, vérifie son SHA-256 et le cartographie à sa base préférée dans Unicorn. Les instructions x64 accèdent aux pages invitées. La table des imports dirige les appels vers les services émulés. Les fonctions TLS précèdent le point d’entrée. Les deux commandes `boot` et `gpu` ont aujourd’hui des chemins distincts. Il reste à relier les commandes graphiques invitées au backend.
