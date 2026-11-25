@@ -82,7 +82,52 @@ Le module `fill_ahead` lisait ces constantes en avance sans attendre. Dès qu'un
 - Le test `rebar_copy_bytes_reach_the_card_and_the_charge_goes_with_the_buffer` passe sur la RTX 5080.
 - Aucun passage en jeu n'a encore été fait avec ces correctifs : la mesure suit le protocole ci-dessus.
 
+### Travail de la carte : dessins mesh lancés par la carte (correctif 0041)
+
+**Diagnostic.** Premier passage en jeu avec 0038 à 0040 : ~190 ms par image lourde, carte occupée ~88 % du temps. Le goulot n'est plus le CPU. Une passe chronométrée commande par commande (build de diagnostic, `VICTORY_GPU_TIMING=1`) dans la scène lourde du prologue montre :
+- 4 500 à 6 400 dessins mesh indirects par image coûtent 58 à 94 ms de carte, soit ~14 µs chacun ;
+- le même dessin, quand le CPU connaît son nombre de groupes, coûte ~4 µs ;
+- la différence vient du bornage par enregistrement : une passe de calcul à nous entre deux attentes de toutes les écritures de shaders, avant chaque dessin. La carte se vide deux fois par dessin. À 1 700 dessins par image, c'étaient 3 200 des 3 950 attentes complètes.
+
+Le compteur de la carte du fork aboutissait à la même conclusion (102 ms sur 130 dans les listes du titre avec ce bornage, RTX 4070).
+
+| Décision | Mécanisme | Interrupteur (défaut) |
+| --- | --- | --- |
+| La carte lit et borne l'enregistrement dans le dessin lui-même | Étage d'amplification à nous (`launch.hlsl`) devant chaque shader mesh traduit : il lit les trois mots là où les passes du titre les ont écrits, borne à 65 535 groupes, débite le budget de la liste comme le bornage, puis lance les groupes mesh. Aucune passe ni attente entre les dessins ; la barrière du titre ordonne ses passes avant le dessin, comme sur la console | `VICTORY_MESH_LAUNCH` (actif) |
+| Les shaders mesh traduits déclarent une charge utile de 4 octets | Le pilote refuse un étage d'amplification devant un shader mesh qui n'en déclare pas (vérifié sur la RTX 5080), et accepte un shader mesh qui en déclare une sans étage d'amplification | toujours |
+| Les appels avec tampon de compte ou plusieurs enregistrements gardent le bornage | Même pipeline fabriqué sans l'étage, à la première occasion | avec `VICTORY_MESH_LAUNCH` |
+| Le hachage des copies en mémoire carte lit un bloc de 64 Kio avec 64 fils | Lectures côte à côte, un kilo-octet à la fois, puis le premier fil combine les 64 empreintes. Avant : un seul fil enchaînait 4 096 lectures dépendantes, pour 500 à 1 400 passes de hachage et ~390 comparaisons par image | `VICTORY_CARD_HASH_WIDE` (actif) |
+
+**Ce qui change dans le comportement.** Les étages d'amplification de dessins différents peuvent s'exécuter dans un autre ordre que celui de la liste. Quand le budget d'une liste est épuisé, l'ordre de la carte décide donc quels enregistrements sont vidés. La borne du travail total de la liste, qui protège contre une liste qui tourne pendant des secondes, reste la même. Le titre demande ~30 000 groupes mesh par image, pour un budget d'environ un million par liste.
+
+**Vérifications.**
+- `mesh_records_are_launched_by_the_amplification_stage`, sur la RTX 5080 : enregistrement lu sur la carte, compte direct, bornage à 65 535, dimension vide, épuisement du budget.
+- Les deux tests du hachage sur l'adaptateur logiciel passent avec le shader parallèle : stockage, comparaison, retour arrière, décalage de début de copie, récupération dans les vols.
+- Toute la suite du moteur GPU (181 tests) et celle du traducteur (216 tests) passent.
+
+**Mesure en jeu.** Deux passages de 300 s, build de diagnostic, même sauvegarde et même cache de pipelines chaud, scène lourde du prologue en 3840 × 2160 :
+
+| Images lourdes (≥ 3 000 dessins) | A : `VICTORY_MESH_LAUNCH=0 VICTORY_CARD_HASH_WIDE=0` | B : défauts |
+| --- | ---: | ---: |
+| Images mesurées | 959 | 1 564 |
+| p50 | 198,3 ms | 119,8 ms |
+| p95 | 312,4 ms | 207,8 ms |
+| Moyenne | 221,1 ms (4,5 images/s) | 137,0 ms (7,3 images/s) |
+| Carte occupée | ~78 % | ~35 % |
+
+- Un passage de chauffe avec le seul hachage parallèle donnait déjà 140 à 156 ms à 5 500–6 000 dessins par image.
+- Captures (`VICTORY_CAPTURE`) : image complète dans les deux bras (personnages, murs, éclairage, brouillard).
+- Dessins sans pipeline : 7,1 % contre 7,4 %, en proportion du nombre de dessins.
+- Dans B, pendant ~30 s, le tas de descripteurs dynamiques a été plein (« no free dynamic descriptor slots »), à un endroit de la scène que A n'a pas atteint. Le lanceur n'utilise aucun descripteur ; la cause reste à établir.
+- Un pipeline mesh a été refusé avec l'étage (`E_INVALIDARG`) et refait sans, comme prévu.
+
+**Correctifs suivants.**
+- 0042 compte sur la ligne de cadence les commandes indirectes encore bornées, par type, et la raison pour laquelle une fusion des octets du titre sous les écritures des vols renonce.
+- 0043 met le nom de Kelvaroq dans le titre de la fenêtre et sur la fenêtre de secours du moteur. Les crédits de VIctory et du fork figurent dans le README.
+
 **Reste à construire.**
+- **Le côté CPU limite désormais l'image** (~120 ms) : une attente d'environ 80 ms par image quand le titre réécrit une mémoire que des vols écrivent, les copies de mémoire du titre (~55 ms), la recopie des écritures GPU (~30 ms).
+- **Les ~1 420 autres commandes indirectes par image** (dessins non mesh, dispatchs de calcul) gardent leur passe de bornage et ses deux attentes.
 - **Cohérence paresseuse.** Les écritures GPU restent sur la carte. Elles ne seraient recopiées en RAM que sur faute d'accès du CPU, au lieu de l'atterrissage systématique (~50 ms par image sur le fil relay). Ça demande que les chemins qui lisent la mémoire du titre par le noyau consultent l'état des pages avant de lire.
 - **Traduction des commandes hors des fils du titre**, avec un cache de l'état traduit d'une image à l'autre.
 

@@ -2,9 +2,9 @@
 
 # Kelvaroq
 
-Projet privé de compatibilité Xbox Series X|S pour Windows x64, écrit en Rust avec un moteur CPU de référence pour la recherche. L’objectif est une scène jouable en **3840 × 2160 à 30 images rendues par seconde**, avec ses textures correctes et une cadence régulière sur NVIDIA et AMD.
+Projet de compatibilité Xbox Series X|S pour Windows x64, écrit en Rust avec un moteur CPU de référence pour la recherche. L’objectif est une scène jouable en **3840 × 2160 à 30 images rendues par seconde**, avec ses textures correctes et une cadence régulière sur NVIDIA et AMD.
 
-**État sur la RTX 5080.** Sur une version antérieure, 30 intervalles de démarrage avaient une médiane de 33,3 ms. Le dernier passage de la branche expérimentale avant portage a donné 254,9 ms au p50 et 627,7 ms au p95 sur 699 images lourdes du prologue en 3840 × 2160. Le moteur livré est désormais construit sur le fork `f85101b`. Sa cadence et la qualité de ses textures en jeu restent à mesurer. [Protocole de comparaison](documentation.md#mesure-de-la-scène-lourde)
+**Jouable sur la RTX 5080 : ~10 images par seconde** dans les vues courantes du prologue, en 3840 × 2160. Dans les scènes les plus chargées (3 000 dessins et plus par image), la médiane passe de 198 ms à 120 ms avec les correctifs 0041 et 0042, soit 7 à 8 images par seconde sur 1 564 images mesurées. Le temps de la carte graphique n'est plus le facteur limitant : elle est occupée ~35 % du temps contre ~78 % avant. Environ 7 % des dessins restent sans pipeline et des textures attendent de la place en VRAM. La cible reste 30 images par seconde. [Protocole de comparaison](documentation.md#mesure-de-la-scène-lourde) · [Détail des correctifs](documentation.md#travail-de-la-carte--dessins-mesh-lancés-par-la-carte-correctif-0041)
 
 ## Lancer le paquet Windows
 
@@ -30,7 +30,7 @@ python -m venv .venv
 git config core.hooksPath .githooks
 ```
 
-Le constructeur natif récupère la révision épinglée, applique les correctifs de rendu puis ajoute `native/kelvaroq-render` à la compilation. Avec un clone existant, utiliser `python scripts/build_native.py --source <clone>`. Les sauvegardes et le cache locaux de VIctory restent accessibles au moteur natif. Pour reconstruire le ZIP privé du prototype depuis Windows, exécuter `python scripts/package_windows.py`. Le script fournit les notices des composants tiers, vérifie leurs empreintes et teste l’archive décompressée hors du dépôt. Le résultat se trouve dans `target/dist/`. Le moteur de référence utilise Unicorn sous GPLv2. La notice et les sources amont correspondantes sont incluses. [Licence du moteur Unicorn](https://github.com/unicorn-engine/unicorn/blob/2.1.4/COPYING)
+Le constructeur natif récupère la révision épinglée, applique les correctifs de rendu puis ajoute `native/kelvaroq-render` à la compilation. Avec un clone existant, utiliser `python scripts/build_native.py --source <clone>`. Les sauvegardes et le cache locaux de VIctory restent accessibles au moteur natif. Pour reconstruire le ZIP du prototype depuis Windows, exécuter `python scripts/package_windows.py`. Le script fournit les notices des composants tiers, vérifie leurs empreintes et teste l’archive décompressée hors du dépôt. Le résultat se trouve dans `target/dist/`. Le moteur de référence utilise Unicorn sous GPLv2. La notice et les sources amont correspondantes sont incluses. [Licence du moteur Unicorn](https://github.com/unicorn-engine/unicorn/blob/2.1.4/COPYING)
 
 ## Exécuter
 
@@ -62,4 +62,14 @@ Git et Cargo sont nécessaires. Le premier lancement récupère les révisions, 
 - Pour les choix d’architecture, les critères de compatibilité et le protocole de mesure, lire [documentation.md](documentation.md).
 - Pour les observations sur le binaire, les adresses et l’arrêt reproductible, consulter le [carnet de décompilation](décompile.md).
 
-Le dépôt contient le code, le logo et des programmes de test générés à partir de sources originales. Le fichier étudié est fourni localement par l’opérateur. Les conditions applicables au projet figurent dans [LICENSE](LICENSE).
+Le dépôt contient le code, le logo et des programmes de test générés à partir de sources originales. **Il ne contient aucun fichier, code ou ressource d’un jeu** : le fichier étudié est fourni localement par l’opérateur, à partir de sa propre copie. Le projet n’est ni affilié ni approuvé par le développeur ou l’éditeur d’un jeu. Les conditions applicables au projet figurent dans [LICENSE](LICENSE).
+
+## Crédits
+
+Le moteur natif de Kelvaroq, qui affiche son nom dans la fenêtre du jeu, est construit sur le travail d’autres projets :
+
+- **[VIctory](https://github.com/Marvisak/VIctory)**, de Marvisak et ses contributeurs, est la base du moteur natif : le chargeur, les services d’exécution, le rendu Direct3D 12 et le recompilateur de shaders. Licence GPL-3.0-or-later.
+- **[victory-fork](https://github.com/fxceless/victory-fork)**, de fxceless et ses contributeurs, est la révision épinglée sur laquelle s’appliquent les correctifs de `native/patches`. Licence GPL-3.0-or-later.
+- **[Unicorn](https://github.com/unicorn-engine/unicorn)** exécute le moteur CPU de référence. Licence GPLv2.
+
+Kelvaroq apporte le lanceur, le crate de rendu `native/kelvaroq-render`, les correctifs de `native/patches`, le moteur de référence et les outils de mesure.
