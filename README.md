@@ -45,7 +45,10 @@ The three runs of the initial victory-fork port had heavy-frame medians of 215, 
 - [x] Apply patches 0041–0042 so the GPU launches mesh draws through an amplification stage, eliminating the clamp pass and full waits between mesh draws. GPU hashing uses 64 threads per block. Together these changes cut median heavy-frame time by 40%.
 - [x] Display the Kelvaroq name in the engine window and release the project as free software under the GPL.
 - [x] Copy game memory in place instead of through the kernel (patch 0044): 7–12% less frame time at 5,000 draws and more; frame-time spikes over one second are gone.
-- [ ] Cut the rest of the submitting thread's work (about 85 ms per heavy frame), now the critical path: the GPU waits for it. *In progress.*
+- [x] Ask Windows for changed pages once per reservation and submission (patch 0045): heavy-frame median 129 → 110 ms in an A/B.
+- [x] Present asynchronously, at most two frames ahead (patches 0046, 0048): the game no longer waits in present; p95 568 → 262 ms.
+- [ ] Spread the submitting thread's work (about 86 ms per heavy frame) over several threads: it is now the only critical path. *Next.*
+- [ ] Run 64-lane compute shaders on 32-lane GPUs, and build ray-tracing structures (about 515 dropped draws per frame).
 - [ ] Address the remaining ~1,400 clamped indirect calls per frame across non-mesh draws and compute dispatches.
 - [ ] Address the VRAM budget and missing host pipelines.
 - [ ] Reach 30 rendered fps in the heavy prologue scene.

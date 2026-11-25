@@ -146,7 +146,24 @@ Le compteur de la carte du fork aboutissait à la même conclusion (102 ms sur 1
 - ~13 400 lectures directes et ~4 400 lectures noyau par image. Les copies passent d'environ 0,34 à 0,28 ms par Mo : le temps de copie ne vient pas surtout de l'appel noyau, mais de ce qui entoure chaque lecture (~2,5 µs par lecture).
 - Image intacte sur les captures. 186 tests du moteur GPU et 102 de `victory-hle` passent.
 
+### Pages modifiées, présentation asynchrone et conformité DXIL (correctifs 0045 à 0048)
+
+Trois chantiers menés en parallèle, chacun sur sa branche, mesurés séparément (passages de 300 s, même sauvegarde, cache chaud, build de diagnostic), puis fusionnés.
+
+| Correctif | Mécanisme | Mesure (images lourdes) | Interrupteur (défaut) |
+| --- | --- | --- | --- |
+| 0045 | Une interrogation `GetWriteWatch` par réservation et par soumission, réponse réutilisée ; aucune interrogation sur la mémoire de vue déjà gardée ; petites lectures regroupées par page. Les pages remises à zéro hors des plages demandées restent inscrites au journal | p50 129,2 → 109,5 ms ; tranche 5 000–6 000 dessins 127,8 → 108,0 ms | `VICTORY_WATCH_RESERVATION`, `VICTORY_COPY_SMALL`, `VICTORY_WATCH_STATS` (actifs) |
+| 0046, 0048 | Présentation asynchrone bornée : le titre enregistre l'image suivante pendant que la soumission prépare la courante, au plus deux images d'avance. Bilan par seconde de qui attend qui | p50 115,5 → 108,5 ms ; p95 568 → 262 ms ; 1 022 → 1 648 images lourdes | `VICTORY_ASYNC_PRESENT` (actif), `VICTORY_FRAMES_AHEAD` (2), `VICTORY_EARLY_BARRIERS` (inactif) |
+| 0047 | Ordre des éléments de signature DXIL corrigé (18 entrées du cache passent la validation), deux cas d'échange de masque de voies traduits, recherche en cache `0x218` comptée, refus de pipelines détaillés | Aucun effet mesurable dans cette scène : le pilote acceptait déjà ces shaders | toujours |
+
+**Ce que montre le bilan des attentes** avec la présentation asynchrone : le titre ne passe plus que 0,1 ms par image dans l'appel de présentation. Le fil de soumission travaille 85,8 ms et attend la recopie 15,2 ms par image, soit le temps d'image : **il est le seul chemin critique**. La recopie travaille ~34 ms et reste inactive ~40 ms.
+
+**Dessins manquants.** ~515 des dessins abandonnés par image viennent du constructeur de structures de lancer de rayons, volontairement coupé. Sept pipelines de calcul sont refusés parce qu'ils exigent des vagues de 64 fils sur une carte qui en exécute 32 ; les forcer à 32 donnerait des résultats faux.
+
 **Reste à construire.**
+- **Le fil de soumission** (~86 ms de travail par image lourde) : répartir sa préparation sur plusieurs fils, synchroniser le tas de descripteurs de façon incrémentale.
+- **La recopie paresseuse** des écritures GPU, et l'attente de la soumission sur elle (~15 ms par image).
+- **Les vagues de 64 fils** sur une carte qui en exécute 32, et le **lancer de rayons**.
 - **Le côté CPU limite désormais l'image** (~120 ms) : une attente d'environ 80 ms par image quand le titre réécrit une mémoire que des vols écrivent, les copies de mémoire du titre (~55 ms), la recopie des écritures GPU (~30 ms).
 - **Les ~1 420 autres commandes indirectes par image** (dessins non mesh, dispatchs de calcul) gardent leur passe de bornage et ses deux attentes.
 - **Cohérence paresseuse.** Les écritures GPU restent sur la carte. Elles ne seraient recopiées en RAM que sur faute d'accès du CPU, au lieu de l'atterrissage systématique (~50 ms par image sur le fil relay). Ça demande que les chemins qui lisent la mémoire du titre par le noyau consultent l'état des pages avant de lire.
