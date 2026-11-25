@@ -30,7 +30,7 @@ mod launcher {
         Win32::{
             Foundation::{ERROR_CANCELLED, HWND, LPARAM, LRESULT, RECT, WPARAM},
             Graphics::Gdi::{COLOR_BTNFACE, DEFAULT_GUI_FONT, GetStockObject, GetSysColorBrush},
-            System::{Com::*, LibraryLoader::GetModuleHandleW, Threading::CREATE_NO_WINDOW},
+            System::{Com::*, LibraryLoader::GetModuleHandleW, Threading::DETACHED_PROCESS},
             UI::{
                 Input::KeyboardAndMouse::SetFocus,
                 Shell::{Common::COMDLG_FILTERSPEC, *},
@@ -58,10 +58,11 @@ mod launcher {
         };
         let cli = companion(&std::env::current_exe()?)?;
         let result = Command::new(&cli)
+            .env("KELVAROQ_DESKTOP_LOG", "1")
             .arg("play")
             .arg("--")
             .arg(&image)
-            .creation_flags(CREATE_NO_WINDOW.0)
+            .creation_flags(DETACHED_PROCESS.0)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())

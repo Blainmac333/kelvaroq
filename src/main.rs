@@ -3,6 +3,8 @@ mod desktop;
 #[cfg(windows)]
 mod gpu;
 mod image;
+#[cfg(windows)]
+mod native;
 mod package;
 
 use anyhow::{Context, Result, bail};
@@ -30,8 +32,14 @@ enum Action {
     },
     /// Execute TLS and startup instructions in the isolated reference CPU.
     Boot(BootOptions),
-    /// Open the display and live log windows and start the reference CPU.
-    Play(BootOptions),
+    /// Run the game with the native backend, or open the reference debugger.
+    Play {
+        #[command(flatten)]
+        options: BootOptions,
+        /// Use the instrumented reference CPU even when the native backend is installed.
+        #[arg(long)]
+        reference: bool,
+    },
     /// Verify offscreen D3D12 rendering and readback on hardware adapters.
     Gpu {
         /// DXGI adapter index. By default all hardware adapters are tested.
@@ -139,7 +147,25 @@ fn run(args: Args) -> Result<ExitCode> {
             }
         }
         Action::Boot(options) => return options.run(false),
-        Action::Play(options) => return options.run(true),
+        Action::Play { options, reference } => {
+            #[cfg(windows)]
+            if !reference
+                && options.python.is_none()
+                && options.processor_info.is_none()
+                && !options.host_topology
+            {
+                let engine = std::env::current_exe()?
+                    .with_file_name("native")
+                    .join("victory.exe");
+                if engine.is_file() {
+                    let image = package::image_path(&options.image)?;
+                    return native::run(&engine, &image, &options.console);
+                }
+            }
+            #[cfg(not(windows))]
+            let _ = reference;
+            return options.run(true);
+        }
         Action::Gpu { adapter } => {
             #[cfg(windows)]
             gpu::probe(adapter)?;

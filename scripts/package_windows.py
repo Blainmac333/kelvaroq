@@ -170,7 +170,7 @@ def rust_notices(archive, metadata):
     )
 
 
-def package(archive, release, cache, metadata):
+def package(archive, release, cache, metadata, native):
     mapping = {
         "kelvaroq-launcher.exe": "Kelvaroq.exe",
         "kelvaroq.exe": "kelvaroq-cli.exe",
@@ -183,6 +183,18 @@ def package(archive, release, cache, metadata):
                 if str(directory).lower().encode(encoding) in data.lower():
                     raise ValueError(f"local build path in {src}")
         put(archive, dest, data)
+    receipt = (native / "build.json").read_bytes()
+    recorded = json.loads(receipt)["sha256"]
+    for source, dest in (
+        ("victory.exe", "native/victory.exe"),
+        ("LICENSE", "notices/native/LICENSE"),
+        ("source.zip", "sources/native.zip"),
+    ):
+        data = (native / source).read_bytes()
+        if hashlib.sha256(data).hexdigest() != recorded[source]:
+            raise ValueError(f"native build receipt mismatch for {source}")
+        put(archive, dest, data)
+    put(archive, "native/build.json", receipt)
     put(archive, "LICENSE.txt", (ROOT / "LICENSE").read_bytes())
     for module in sorted((ROOT / "research/kelvaroq_reference").glob("*.py")):
         put(archive, "runtime/kelvaroq_reference/" + module.name, module.read_bytes())
@@ -216,7 +228,9 @@ def package(archive, release, cache, metadata):
         archive,
         "notices/README.txt",
         (
-            b"Kelvaroq uses CPython 3.14.10 (runtime/LICENSE.txt and notices/python), "
+            b"Native play uses the VIctory backend and Kelvaroq rendering code. "
+            b"See notices/native/LICENSE, native/build.json and sources/native.zip.\n"
+            b"The reference CPU uses CPython 3.14.10 (runtime/LICENSE.txt and notices/python), "
             b"Capstone 5.0.7 (notices/capstone), and Unicorn Engine 2.1.4 "
             b"(notices/unicorn). Unicorn's upstream engine is licensed under the GNU "
             b"General Public License version 2. The complete upstream source tree "
@@ -265,6 +279,13 @@ def verify(path):
             cwd=tmp,
             env=env,
         )
+        subprocess.run(
+            [str(copied / "native/victory.exe"), "run", "--help"],
+            check=True,
+            cwd=tmp,
+            env=env,
+            stdout=subprocess.DEVNULL,
+        )
 
 
 def main():
@@ -272,6 +293,11 @@ def main():
     parser.parse_args()
     if sys.platform != "win32":
         parser.error("the package build and portable smoke test require Windows")
+    native = TARGET / "release/native"
+    if not (native / "build.json").is_file():
+        parser.error(
+            "first run python scripts/build_native.py to build the native backend"
+        )
     with (ROOT / "research/pyproject.toml").open("rb") as manifest:
         dependencies = tomllib.load(manifest)["project"]["dependencies"]
     if set(dependencies) != {"capstone==5.0.7", "unicorn==2.1.4"}:
@@ -290,7 +316,7 @@ def main():
     with tempfile.TemporaryDirectory(dir=out) as staging:
         candidate = Path(staging) / target.name
         with zipfile.ZipFile(candidate, "w") as archive:
-            package(archive, release, cache, metadata)
+            package(archive, release, cache, metadata, native)
         verify(candidate)
         os.replace(candidate, target)
     with target.open("rb") as stream:

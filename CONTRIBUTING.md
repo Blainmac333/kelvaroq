@@ -5,6 +5,8 @@
 | Emplacement | Responsabilité |
 | --- | --- |
 | `src/main.rs` | Commandes publiques, exécution du worker et codes de sortie. |
+| `src/native.rs`, `scripts/build_native.py` | Lancement du backend natif, assemblage du code épinglé et vérification du paquet livré. |
+| `native/kelvaroq-render/src/`, `native/patches/` | Algorithmes de rendu écrits dans Kelvaroq, tests associés et raccords aux points d’appel de VIctory. |
 | `src/bin/kelvaroq-launcher.rs`, `src/package.rs` | Sélection du dossier ou du fichier dans Windows et résolution de l’exécutable déclaré. |
 | `src/desktop.rs` | Fenêtre de rendu, fenêtre de journal et durée de vie du processus de référence. |
 | `src/simd.rs`, `src/simd_vector.rs` | Calculs flottants x64 de référence et isolation de l’environnement flottant de l’hôte. |

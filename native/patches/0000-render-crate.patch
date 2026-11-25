@@ -1,0 +1,33 @@
+diff --git a/crates/victory-gpu/Cargo.toml b/crates/victory-gpu/Cargo.toml
+--- a/crates/victory-gpu/Cargo.toml
++++ b/crates/victory-gpu/Cargo.toml
+@@ -8,6 +8,7 @@
+ publish.workspace = true
+ 
+ [dependencies]
++kelvaroq-render = { path = "../kelvaroq-render" }
+ blake3.workspace = true
+ miniz_oxide.workspace = true
+ tracing.workspace = true
+diff --git a/Cargo.lock b/Cargo.lock
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -241,6 +241,10 @@
+ version = "1.70.2"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
++
++[[package]]
++name = "kelvaroq-render"
++version = "0.1.0"
+ 
+ [[package]]
+ name = "lazy_static"
+@@ -690,6 +694,7 @@
+ dependencies = [
+  "anyhow",
+  "blake3",
++ "kelvaroq-render",
+  "miniz_oxide",
+  "tempfile",
+  "tracing",
