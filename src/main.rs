@@ -5,6 +5,10 @@ mod gpu;
 mod image;
 #[cfg(windows)]
 mod native;
+#[cfg(windows)]
+mod preload;
+#[cfg(windows)]
+mod preload_process;
 mod package;
 
 use anyhow::{Context, Result, bail};
