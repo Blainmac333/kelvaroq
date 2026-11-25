@@ -41,7 +41,7 @@ The three runs of the initial victory-fork port had heavy-frame medians of 215, 
 
 ### External playtest: one 36-minute session
 
-A tester played a build from this public repository and monitored it. Their hardware was not reported. The session ran for **36 min 46 s without a crash**. The game was still open and responsive when monitoring stopped, and no new `*.crash.log` file appeared.
+A tester played a build from this public repository and monitored it, on a Ryzen 9 7950X, an RTX 4090 and 32 GB of DDR5 RAM. The session ran for **36 min 46 s without a crash**. The game was still open and responsive when monitoring stopped, and no new `*.crash.log` file appeared.
 
 | Metric | Value |
 | --- | ---: |
