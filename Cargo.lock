@@ -201,11 +201,13 @@ dependencies = [
  "clap",
  "dunce",
  "goblin",
+ "kelvaroq-render",
  "roxmltree",
  "serde",
  "serde_json",
  "sha2",
  "windows",
+ "windows-numerics",
 ]
 
 [[package]]

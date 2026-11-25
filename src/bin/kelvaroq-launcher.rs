@@ -1,6 +1,14 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 #[cfg(windows)]
+#[path = "../preload.rs"]
+mod preload;
+
+#[cfg(windows)]
+#[path = "../monitor/mod.rs"]
+mod monitor;
+
+#[cfg(windows)]
 fn main() -> std::process::ExitCode {
     match launcher::run() {
         Ok(code) => code,
@@ -44,7 +52,26 @@ mod launcher {
     const PICK_FOLDER: usize = 102;
 
     pub(super) fn run() -> Result<ExitCode> {
+        if let Some(result) = crate::monitor::command() { result?; return Ok(ExitCode::SUCCESS); }
         let mut args = std::env::args_os().skip(1).peekable();
+        if args.next_if(|a| a == "--preload-demo").is_some() {
+            if args.next_if(|a| a == "--capture").is_some() {
+                let folder = args.next().context("Dossier des captures manquant")?;
+                anyhow::ensure!(args.next().is_none(), "Un seul dossier attendu.");
+                crate::preload::capture_demo(Path::new(&folder))?;
+                return Ok(ExitCode::SUCCESS);
+            }
+            let percent = args
+                .next()
+                .map(|v| v.to_string_lossy().parse::<u32>())
+                .transpose()?;
+            anyhow::ensure!(
+                args.next().is_none() && percent.is_none_or(|n| n <= 100),
+                "Pourcentage attendu entre 0 et 100."
+            );
+            crate::preload::demo(percent)?;
+            return Ok(ExitCode::SUCCESS);
+        }
         let experimental = args.next_if(|arg| arg == "--experimental-render").is_some();
         let argument = args.next();
         if args.next().is_some() {

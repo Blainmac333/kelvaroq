@@ -1,10 +1,16 @@
 #[cfg(windows)]
 mod desktop;
 #[cfg(windows)]
+mod monitor;
+#[cfg(windows)]
 mod gpu;
 mod image;
 #[cfg(windows)]
 mod native;
+#[cfg(windows)]
+mod preload;
+#[cfg(windows)]
+mod preload_process;
 mod package;
 
 use anyhow::{Context, Result, bail};
@@ -190,6 +196,13 @@ fn run(args: Args) -> Result<ExitCode> {
 }
 
 fn main() -> ExitCode {
+    #[cfg(windows)]
+    if let Some(result) = monitor::command() {
+        return match result {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => { eprintln!("{e:#}"); ExitCode::FAILURE }
+        };
+    }
     match run(Args::parse()) {
         Ok(status) => status,
         Err(e) => {

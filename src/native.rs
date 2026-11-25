@@ -33,21 +33,30 @@ pub(crate) fn run(
     // Give the native file services a conventional DOS path when it names
     // the same file. Keep the extended form for paths that require it.
     let image = dunce::canonicalize(image).context("ouverture de l’exécutable du jeu")?;
-    let mut game = Command::new(engine);
-    if experimental_render {
-        game.envs(
-            EXPERIMENTAL_RENDER
-                .iter()
-                .copied()
-                .filter(|(key, _)| std::env::var_os(key).is_none()),
-        );
+    let configure = || -> Result<Command> {
+        let mut game = Command::new(engine);
+        if experimental_render {
+            game.envs(
+                EXPERIMENTAL_RENDER
+                    .iter()
+                    .copied()
+                    .filter(|(key, _)| std::env::var_os(key).is_none()),
+            );
+        }
+        game.current_dir(engine.parent().context("dossier du moteur natif")?)
+            .env(
+                "VICTORY_GAME_DIR",
+                image.parent().context("dossier du jeu")?,
+            );
+        Ok(game)
+    };
+    if std::env::var_os("KELVAROQ_DESKTOP_LOG").is_some()
+        && let Err(error) = crate::preload_process::before_play(&configure)
+    {
+        eprintln!("Préchargement interrompu. {error:#}");
     }
-    game.current_dir(engine.parent().context("dossier du moteur natif")?)
-        .env(
-            "VICTORY_GAME_DIR",
-            image.parent().context("dossier du jeu")?,
-        )
-        .arg("run")
+    let mut game = configure()?;
+    game.arg("run")
         .arg(&image)
         .args(["--console", console, "--execute"]);
     if std::env::var_os("KELVAROQ_DESKTOP_LOG").is_some() {
