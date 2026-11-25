@@ -2,9 +2,13 @@
 
 # Kelvaroq
 
-![License](https://img.shields.io/github/license/fablinoo/kelvaroq) ![Platform: Windows x64](https://img.shields.io/badge/platform-Windows%20x64-lightgrey) ![Language: Rust](https://img.shields.io/badge/language-Rust-orange) ![Status: playable · ~10 fps](https://img.shields.io/badge/status-playable%20%C2%B7%20~10%20fps-green) ![Target: 30 fps @ 3840×2160](https://img.shields.io/badge/target-30%20fps%20%40%203840%C3%972160-blue) ![Tested on RTX 5080](https://img.shields.io/badge/tested%20on-RTX%205080-lightgrey)
+![License](https://img.shields.io/github/license/fablinoo/kelvaroq) ![Platform: Windows x64](https://img.shields.io/badge/platform-Windows%20x64-lightgrey) ![Language: Rust](https://img.shields.io/badge/language-Rust-orange) ![Status: playable · ~10 fps](https://img.shields.io/badge/status-playable%20%C2%B7%20~10%20fps-green) ![Target: 30 fps @ 3840×2160](https://img.shields.io/badge/target-30%20fps%20%40%203840%C3%972160-blue) ![Tested on RTX 5080](https://img.shields.io/badge/tested%20on-RTX%205080-lightgrey) [![Built with Moon AI](https://img.shields.io/badge/built%20with-Moon%20AI-7c3aed)](https://realmoon.ai) ![Ranked #1 on a public tracker](https://img.shields.io/badge/public%20tracker-%231%20of%2044-gold)
 
 Kelvaroq is an Xbox Series X|S compatibility runtime for Windows x64, written in Rust. Its native engine is built on VIctory and victory-fork. The goal is a playable scene at 3840×2160 and 30 rendered fps, with correct textures and steady frame pacing on NVIDIA and AMD GPUs.
+
+> **Built entirely with [Moon AI](https://realmoon.ai).** All of the code, the research, the reverse-engineering notes, the measurements and the documentation in this project are produced with the Moon AI platform. Kelvaroq is developed by [Stellarr Studio SAS](https://stellarrstudio.com).
+>
+> **Ranked #1 of 44 projects** on an independent public tracker of PC compatibility efforts for this console title (check of 25 November 2026, 21:02 UTC): furthest along, two steps short of its "playable" bar of 20 fps and 30 minutes without a crash.
 
 ## Status
 
@@ -147,7 +151,7 @@ These documents are written in French.
 
 ## Credits
 
-Kelvaroq is developed by **Stellarr Studio SAS**, a French company ([stellarrstudio.com](https://stellarrstudio.com)). All of its development is done with [Moon AI](https://realmoon.ai).
+Kelvaroq is developed by **Stellarr Studio SAS**, a French company ([stellarrstudio.com](https://stellarrstudio.com)). All of its code, research and documentation are produced with the [Moon AI](https://realmoon.ai) platform.
 
 - **VIctory**, by Marvisak and contributors, provides the native engine's loader, runtime services, Direct3D 12 renderer and shader recompiler. Its license is GPL-3.0-or-later. [VIctory](https://github.com/Marvisak/VIctory)
 - **victory-fork**, by fxceless and contributors, provides the pinned revision to which Kelvaroq applies `native/patches`. Its license is GPL-3.0-or-later. [victory-fork](https://github.com/fxceless/victory-fork)
