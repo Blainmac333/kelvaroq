@@ -1,7 +1,6 @@
 """Verified VEX vector operations for the startup reference."""
 
-import operator
-import struct
+from functools import lru_cache
 
 from capstone import CS_ARCH_X86, CS_MODE_64, Cs
 from capstone import x86_const as instructions
@@ -16,23 +15,20 @@ from capstone.x86_const import (
     X86_INS_VMOVDQU,
     X86_INS_VMOVUPD,
     X86_INS_VMOVUPS,
-    X86_INS_VPADDQ,
     X86_INS_VPBROADCASTB,
     X86_INS_VPBROADCASTD,
     X86_INS_VPBROADCASTQ,
     X86_INS_VPBROADCASTW,
-    X86_INS_VPERMQ,
-    X86_INS_VXORPS,
     X86_INS_VZEROUPPER,
     X86_OP_IMM,
     X86_OP_MEM,
     X86_OP_REG,
-    X86_REG_RIP,
 )
 from unicorn import UC_PROT_EXEC, x86_const
 
 from . import fma
-from .memory import GuestFault, read_guest, write_guest
+from .memory import GuestFault, write_guest
+from .packed_integer import INTEGER_OPS, execute_integer
 from .vector_extra import (
     FLOAT128_OPS,
     INT128_OPS,
@@ -43,6 +39,7 @@ from .vector_extra import (
     scalar_fma,
     select_lanes,
 )
+from .vector_operands import effective_address, operand_bytes, vector_register, ymm
 
 FMA_OPS = {
     getattr(instructions, f"X86_INS_V{family}{order}PS"): op
@@ -54,7 +51,6 @@ FMA_OPS = {
 }
 
 ALIGNED_MOVES = (X86_INS_VMOVAPS, X86_INS_VMOVAPD, X86_INS_VMOVDQA)
-
 BROADCAST_BYTES = {
     X86_INS_VBROADCASTF128: 16,
     X86_INS_VBROADCASTI128: 16,
@@ -67,63 +63,22 @@ BROADCAST_BYTES = {
 }
 
 
-def ymm(index):
-    return getattr(x86_const, f"UC_X86_REG_YMM{index}")
-
-
-def vector_register(insn, operand):
-    name = insn.reg_name(operand.reg)
-    if operand.type != X86_OP_REG or not name.startswith(("xmm", "ymm")):
-        raise ValueError("expected an x86 vector register")
-    return ymm(int(name[3:]))
-
-
-def effective_address(cpu, insn, mem):
-    def read(reg):
-        if not reg:
-            return 0
-        if reg == X86_REG_RIP:
-            return insn.address + insn.size
-        name = insn.reg_name(reg).upper()
-        return cpu.reg_read(getattr(x86_const, f"UC_X86_REG_{name}"))
-
-    address = read(mem.base) + read(mem.index) * mem.scale + mem.disp
-    segment = insn.reg_name(mem.segment) if mem.segment else None
-    if segment in ("fs", "gs"):
-        address += cpu.reg_read(
-            getattr(x86_const, f"UC_X86_REG_{segment.upper()}_BASE")
-        )
-    return address & ((1 << 64) - 1)
-
-
-def operand_bytes(cpu, insn, operand, width):
-    if operand.type == X86_OP_MEM:
-        return read_guest(cpu, effective_address(cpu, insn, operand.mem), width)
-    number = cpu.reg_read(vector_register(insn, operand))
-    return number.to_bytes(32, "little")[:width]
-
-
-def packed_qwords(cpu, insn):
-    destination, *sources = insn.operands
-    width = destination.size
-    if insn.id == X86_INS_VPERMQ:
-        lanes = struct.unpack("<4Q", operand_bytes(cpu, insn, sources[0], 32))
-        control = sources[1].imm
-        result = struct.pack(
-            "<4Q", *(lanes[(control >> shift) & 3] for shift in (0, 2, 4, 6))
-        )
-    else:
-        layout = struct.Struct("<" + "Q" * (width // 8))
-        left, right = (
-            layout.unpack(operand_bytes(cpu, insn, source, width)) for source in sources
-        )
-        arithmetic = (
-            operator.sub if insn.id == instructions.X86_INS_VPSUBQ else operator.add
-        )
-        result = layout.pack(
-            *(arithmetic(a, b) & 0xFFFFFFFFFFFFFFFF for a, b in zip(left, right))
-        )
-    cpu.reg_write(vector_register(insn, destination), int.from_bytes(result, "little"))
+VECTOR_OPS = frozenset(
+    (
+        X86_INS_VMOVUPS,
+        X86_INS_VMOVUPD,
+        *ALIGNED_MOVES,
+        X86_INS_VMOVDQU,
+        X86_INS_VZEROUPPER,
+        *INTEGER_OPS,
+        *BROADCAST_BYTES,
+        *FMA_OPS,
+        *SCALAR_FMA_OPS,
+        *LANE_SELECT_OPS,
+        *FLOAT128_OPS,
+        *INT128_OPS,
+    )
+)
 
 
 def execute_packed128(cpu, insn):
@@ -149,10 +104,17 @@ def execute_packed128(cpu, insn):
 
 class VectorMoves:
     def __init__(self):
-        self.decoder = Cs(CS_ARCH_X86, CS_MODE_64)
-        self.decoder.detail = True
+        decoder = Cs(CS_ARCH_X86, CS_MODE_64)
+        decoder.detail = True
 
-    def execute(self, cpu, pc):
+        @lru_cache(maxsize=2048)
+        def decode(pc, code):
+            return next(decoder.disasm(code, pc, count=1), None)
+
+        self.decode = decode
+
+    @staticmethod
+    def fetch(cpu, pc):
         # Decode only accessible instruction bytes, including across page boundaries.
         code = bytearray()
         for low, high, flags in sorted(cpu.mem_regions()):
@@ -164,26 +126,15 @@ class VectorMoves:
             code.extend(cpu.mem_read(current, min(15 - len(code), high - current + 1)))
             if len(code) == 15:
                 break
-        insn = next(self.decoder.disasm(bytes(code), pc, count=1), None)
-        if not insn or insn.id not in (
-            X86_INS_VMOVUPS,
-            X86_INS_VMOVUPD,
-            *ALIGNED_MOVES,
-            X86_INS_VMOVDQU,
-            X86_INS_VZEROUPPER,
-            X86_INS_VXORPS,
-            X86_INS_VPADDQ,
-            instructions.X86_INS_VPSUBQ,
-            instructions.X86_INS_VPCMPEQD,
-            instructions.X86_INS_VPMOVSXBQ,
-            *BROADCAST_BYTES,
-            *FMA_OPS,
-            *SCALAR_FMA_OPS,
-            *LANE_SELECT_OPS,
-            *FLOAT128_OPS,
-            *INT128_OPS,
-            X86_INS_VPERMQ,
-        ):
+        return bytes(code)
+
+    def execute(self, cpu, pc):
+        return self.execute_fetched(cpu, pc, self.fetch(cpu, pc))
+
+    def execute_fetched(self, cpu, pc, code):
+        """Check live instruction bytes from an executable span, then run the operation."""
+        insn = self.decode(pc, code)
+        if not insn or insn.id not in VECTOR_OPS:
             return None
         # Capstone also names EVEX instructions VMOVUPS. Masked and 512-bit
         # forms have different semantics and must stay with another implementation.
@@ -242,43 +193,8 @@ class VectorMoves:
             cpu.reg_write(
                 vector_register(insn, destination), int.from_bytes(value, "little")
             )
-        elif insn.id == instructions.X86_INS_VPMOVSXBQ:
-            destination, source = insn.operands
-            count = destination.size // 8
-            lanes = struct.unpack(f"<{count}b", operand_bytes(cpu, insn, source, count))
-            value = struct.pack(f"<{count}q", *lanes)
-            cpu.reg_write(
-                vector_register(insn, destination), int.from_bytes(value, "little")
-            )
-        elif insn.id == instructions.X86_INS_VPCMPEQD:
-            destination, first, second = insn.operands
-            width = destination.size
-            left = operand_bytes(cpu, insn, first, width)
-            right = operand_bytes(cpu, insn, second, width)
-            value = b"".join(
-                b"\xff" * 4 if left[i : i + 4] == right[i : i + 4] else bytes(4)
-                for i in range(0, width, 4)
-            )
-            cpu.reg_write(
-                vector_register(insn, destination), int.from_bytes(value, "little")
-            )
-        elif insn.id in (X86_INS_VPADDQ, instructions.X86_INS_VPSUBQ, X86_INS_VPERMQ):
-            packed_qwords(cpu, insn)
-        elif insn.id == X86_INS_VXORPS:
-            destination, left, right = insn.operands
-            size = destination.size
-            first = cpu.reg_read(vector_register(insn, left))
-            if right.type == X86_OP_MEM:
-                second = int.from_bytes(
-                    read_guest(cpu, effective_address(cpu, insn, right.mem), size),
-                    "little",
-                )
-            else:
-                second = cpu.reg_read(vector_register(insn, right))
-            cpu.reg_write(
-                vector_register(insn, destination),
-                (first ^ second) & ((1 << (size * 8)) - 1),
-            )
+        elif insn.id in INTEGER_OPS:
+            execute_integer(cpu, insn)
         else:
             self.move(cpu, insn)
         return pc + insn.size

@@ -91,3 +91,18 @@ class SemaphoreTests(unittest.TestCase):
         self.assertEqual(self.call("ReleaseSemaphore", event, 1, 0), 0)
         self.assertEqual(self.call("WaitForSingleObject", sem, 0), 0)
         self.assertEqual(self.call("WaitForSingleObject", event, 0), 258)
+
+    def test_mutex_ownership_recursion_and_close(self):
+        handle = self.call("CreateMutexA", 0, 1, 0)
+        self.assertEqual(self.call("WaitForSingleObject", handle, 0), 0)
+        for _ in range(2):
+            self.assertEqual(self.call("ReleaseMutex", handle), 1)
+        self.assertEqual(self.call("ReleaseMutex", handle), 0)
+        self.assertEqual(self.kernel.last_error, 288)
+        self.assertEqual(self.call("WaitForSingleObject", handle, 0), 0)
+        self.assertEqual(self.call("CloseHandle", handle), 1)
+        self.assertEqual(self.call("ReleaseMutex", handle), 0)
+        self.assertEqual(self.kernel.last_error, 6)
+        unowned = self.call("CreateMutexW", 0, 0, 0)
+        self.assertEqual(self.call("ReleaseMutex", unowned), 0)
+        self.assertEqual(self.kernel.last_error, 288)

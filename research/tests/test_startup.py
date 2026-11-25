@@ -21,7 +21,7 @@ CLI = Path(os.environ.get("KELVAROQ_BIN", ROOT / "target" / "release" / "kelvaro
 BASE = 0x140000000
 
 
-def fixture(with_import=False, executable=True):
+def fixture(with_import=False, executable=True, code=b"\xb8\x2a\0\0\0\xc3"):
     """One code section, optionally importing a deliberately unknown symbol."""
     image = bytearray(0x600)
     image[:2] = b"MZ"
@@ -51,7 +51,6 @@ def fixture(with_import=False, executable=True):
         0,
         flags,
     )
-    code = bytes.fromhex("b8 2a 00 00 00 c3")  # return 42
     if with_import:
         # sub rsp, 40; call [rip + displacement]; add rsp, 40; ret
         code = (
@@ -112,6 +111,14 @@ class StartupTests(unittest.TestCase):
                 "return_rva": "0x100a",
             },
         )
+
+    def test_invalid_instruction_reports_the_mnemonic_and_guest_address(self):
+        result = self.invoke(
+            fixture(code=b"\x0f\x0b"), "boot", "--python", sys.executable
+        )
+        self.assertEqual(result.returncode, 2, result.stderr)
+        stop = json.loads(result.stdout)["stop"]
+        self.assertEqual((stop["instruction"], stop["pc_rva"]), ("ud2", "0x1000"))
 
     def test_entry_requires_executable_section(self):
         result = self.invoke(fixture(executable=False), "inspect")

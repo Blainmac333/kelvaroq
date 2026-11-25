@@ -44,6 +44,17 @@ class Event:
         return ready
 
 
+@dataclass
+class Mutex:
+    # The single guest thread can acquire the same mutex recursively.
+    depth: int
+    access: int = SYNCHRONIZE
+
+    def consume(self):
+        self.depth += 1
+        return True
+
+
 class Synchronization:
     def __init__(self):
         self.handles = {}
@@ -58,6 +69,11 @@ class Synchronization:
     def invoke(self, cpu, name):
         """Return (ABI result, last-error update); None leaves last error unchanged."""
         handle = cpu.reg_read(UC_X86_REG_RCX)
+        if name in ("CreateMutexA", "CreateMutexW"):
+            if handle or cpu.reg_read(UC_X86_REG_R8):
+                raise GuestFault("named or explicitly secured mutex is unsupported")
+            owned = bool(cpu.reg_read(UC_X86_REG_RDX) & 0xFFFFFFFF)
+            return self.insert(Mutex(int(owned)))
         if name in ("CreateEventA", "CreateEventW"):
             if handle or cpu.reg_read(UC_X86_REG_R9):
                 raise GuestFault("named or explicitly secured event is unsupported")
@@ -78,6 +94,7 @@ class Synchronization:
             return self.insert(Semaphore(initial, maximum, access))
         if name not in (
             "ReleaseSemaphore",
+            "ReleaseMutex",
             "SetEvent",
             "ResetEvent",
             "WaitForSingleObject",
@@ -90,6 +107,13 @@ class Synchronization:
             return (WAIT_FAILED if name.startswith("Wait") else 0), 6
         if name == "CloseHandle":
             del self.handles[handle]
+            return 1, None
+        if name == "ReleaseMutex":
+            if not isinstance(obj, Mutex):
+                return 0, 6
+            if obj.depth == 0:
+                return 0, 288  # ERROR_NOT_OWNER
+            obj.depth -= 1
             return 1, None
         if name in ("SetEvent", "ResetEvent"):
             if not isinstance(obj, Event):

@@ -24,7 +24,7 @@ from unicorn.x86_const import (
 from .crt import Crt, copy_memory, fill_memory
 from .graphics_memory import GraphicsMemory
 from .kernel import Kernel
-from .memory import QWORD, GuestFault, map_image, prepare_services, prepare_thread
+from .memory import PAGE, QWORD, GuestFault, map_image, prepare_services, prepare_thread
 from .registry import Registry
 from .vector import VectorMoves
 
@@ -82,10 +82,16 @@ class Startup:
     def check_vector(self, cpu, address, instruction_size, _):
         # Unicorn may accept VEX.128 while retaining stale high lanes.
         # Handle our verified instruction families before the native translator.
-        if cpu.mem_read(address, 1)[0] not in (0xC4, 0xC5):
-            return
         try:
-            following = self.vector.execute(cpu, address)
+            # This callback follows an executable fetch. Read ahead only within
+            # its page. Unicorn can report a sentinel size for unsupported VEX.
+            if cpu.mem_read(address, 1)[0] not in (0xC4, 0xC5):
+                return
+            if address % PAGE <= PAGE - 15:
+                code = bytes(cpu.mem_read(address, 15))
+                following = self.vector.execute_fetched(cpu, address, code)
+            else:
+                following = self.vector.execute(cpu, address)
         except (UcError, GuestFault) as error:
             self.blocker = {"reason": str(error)}
             cpu.emu_stop()
@@ -181,7 +187,18 @@ class Startup:
                     pc = self.cpu.reg_read(UC_X86_REG_RIP)
                     following = self.vector.execute(self.cpu, pc)
                     if following is None:
-                        raise
+                        self.blocker = {
+                            "reason": "guest CPU stopped",
+                            "detail": str(error),
+                        }
+                        instruction = self.vector.decode(
+                            pc, self.vector.fetch(self.cpu, pc)
+                        )
+                        if instruction is not None:
+                            self.blocker["instruction"] = (
+                                f"{instruction.mnemonic} {instruction.op_str}".strip()
+                            )
+                        break
                     address = following
                     continue
                 if self.blocker:

@@ -157,6 +157,7 @@ struct Stage {
 struct Stop {
     reason: String,
     detail: Option<String>,
+    instruction: Option<String>,
     dll: Option<String>,
     symbol: Option<String>,
     return_rva: Option<String>,
@@ -184,6 +185,9 @@ fn report_summary(text: &str, expected_tls: usize) -> String {
         let mut parts = vec![stop.reason];
         if let Some(detail) = stop.detail {
             parts.push(detail);
+        }
+        if let Some(instruction) = stop.instruction {
+            parts.push(instruction);
         }
         if let Some(symbol) = stop.symbol {
             parts.push(
