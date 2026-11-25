@@ -9,12 +9,56 @@ use std::time::{Duration, Instant};
 
 const SAMPLES: usize = 30;
 
-/// Start timing an operation if collection was enabled at process startup.
-pub fn start() -> Option<Instant> {
+fn timings_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
-    ENABLED
-        .get_or_init(|| std::env::var_os("KELVAROQ_FRAME_TIMINGS").is_some_and(|v| v == "1"))
-        .then(Instant::now)
+    *ENABLED.get_or_init(|| std::env::var_os("KELVAROQ_FRAME_TIMINGS").is_some_and(|v| v == "1"))
+}
+
+/// Detailed workload records are independent of the 30-interval summary.
+pub fn workload_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var_os("KELVAROQ_WORKLOAD").is_some_and(|v| v == "1"))
+}
+
+/// Start a guest wait timed by the 30-interval collector.
+pub fn start() -> Option<Instant> {
+    timings_enabled().then(Instant::now)
+}
+
+/// Start the DXGI timer needed by either collector.
+pub fn start_present() -> Option<Instant> {
+    (workload_enabled() || timings_enabled()).then(Instant::now)
+}
+
+pub fn workload_queue(frame: u64, draws: u64, drawn: u64, dispatches: u64, dispatched: u64) {
+    let _ = writeln!(
+        std::io::stderr().lock(),
+        "KELVAROQ_QUEUE_TOTAL frame={frame} draws={draws} drawn={drawn} dispatches={dispatches} dispatched={dispatched}"
+    );
+}
+
+pub fn workload_bind(frame: u64, guest_token: u64, mesh: &str, pixel: &str) {
+    let _ = writeln!(
+        std::io::stderr().lock(),
+        "KELVAROQ_MESH_BIND frame={frame} guest_token={guest_token} mesh={mesh} pixel={pixel}"
+    );
+}
+
+fn exact_interval(
+    previous: &mut Option<(u64, Instant)>,
+    frame: u64,
+    end: Instant,
+    status: i32,
+) -> Option<Duration> {
+    if status != 0 {
+        *previous = None;
+        return None;
+    }
+    let (before, time) = previous.replace((frame, end))?;
+    if before.checked_add(1) != Some(frame) {
+        return None;
+    }
+    end.checked_duration_since(time)
 }
 
 #[derive(Default)]
@@ -99,6 +143,26 @@ pub fn wait(requested: Duration, elapsed: Duration) {
 
 /// Finish a timed DXGI call and write any completed sample window to stderr.
 pub fn present(frame: u64, start: Instant, end: Instant, status: i32) {
+    if workload_enabled() {
+        static PREVIOUS: Mutex<Option<(u64, Instant)>> = Mutex::new(None);
+        let mut previous = PREVIOUS.lock().unwrap_or_else(|e| e.into_inner());
+        let interval = exact_interval(&mut previous, frame, end, status);
+        if status == 0 {
+            let mut sink = std::io::stderr().lock();
+            if let Some(delta) = interval {
+                let _ = writeln!(
+                    sink,
+                    "KELVAROQ_PRESENT frame={frame} interval_us={}",
+                    delta.as_micros()
+                );
+            } else {
+                let _ = writeln!(sink, "KELVAROQ_PRESENT frame={frame}");
+            }
+        }
+    }
+    if !timings_enabled() {
+        return;
+    }
     let sample = window().present(frame, start, end, status);
     if let Some(r) = sample {
         // This optional diagnostic must not fail a presentation on a closed pipe.
@@ -122,6 +186,18 @@ pub fn present(frame: u64, start: Instant, end: Instant, status: i32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exact_intervals_require_adjacent_successes() {
+        let t = Instant::now();
+        let mut previous = None;
+        assert_eq!(exact_interval(&mut previous, 1, t, 0), None);
+        let step = Duration::from_micros(42);
+        assert_eq!(exact_interval(&mut previous, 2, t + step, 0), Some(step));
+        assert_eq!(exact_interval(&mut previous, 4, t + step, 0), None);
+        assert_eq!(exact_interval(&mut previous, 5, t + step, 1), None);
+        assert_eq!(exact_interval(&mut previous, 6, t + step, 0), None);
+    }
 
     #[test]
     fn reports_intervals_and_separates_requested_from_elapsed_waits() {

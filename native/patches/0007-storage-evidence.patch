@@ -1,0 +1,558 @@
+diff --git a/crates/victory-hle/src/modules/dstorage.rs b/crates/victory-hle/src/modules/dstorage.rs
+index 48c6086..4c35a62 100644
+--- a/crates/victory-hle/src/modules/dstorage.rs
++++ b/crates/victory-hle/src/modules/dstorage.rs
+@@ -368,7 +368,7 @@ struct Lane {
+     unsubmitted: Vec<Command>,
+     /// Submitted, by sequence number: reads not started, status entries
+     /// not written, reads running, and failures not yet reported.
+-    reads: VecDeque<(u64, Request)>,
++    reads: VecDeque<(u64, u64, Request)>, // sequence, first sequence of submit, request
+     statuses: VecDeque<(u64, Status)>,
+     running: BTreeSet<u64>,
+     failures: BTreeMap<u64, HRESULT>,
+@@ -384,6 +384,7 @@ unsafe impl Send for Lane {}
+ struct Job {
+     lane: u64,
+     seq: u64,
++    batch: u64,
+     request: Request,
+     staging: u64,
+ }
+@@ -450,7 +451,7 @@ fn work(scheduler: &'static Scheduler) {
+         };
+         drop(lanes);
+         let started = std::time::Instant::now();
+-        let result = execute(&job.request);
++        let result = execute(&job);
+         lanes = scheduler.lock();
+         lanes.finish(&job, result);
+         lanes.count(&job, started);
+@@ -506,7 +507,7 @@ impl Lanes {
+             .filter_map(|(&id, l)| Some((l.clock, l.reads.front()?.0, id)))
+             .min()?;
+         let lane = self.lanes.get_mut(&id)?;
+-        let &(seq, request) = lane.reads.front()?;
++        let &(seq, batch, request) = lane.reads.front()?;
+         let staging = staging_bytes(&request);
+         if self.staged > 0 && self.staged + staging > self.staging {
+             self.starved = true;
+@@ -524,6 +525,7 @@ impl Lanes {
+         Some(Job {
+             lane: id,
+             seq,
++            batch,
+             request,
+             staging,
+         })
+@@ -560,11 +562,12 @@ impl Lanes {
+         if lane.reads.is_empty() {
+             lane.clock = lane.clock.max(self.lane_now[class]);
+         }
++        let batch = self.next_seq;
+         for command in std::mem::take(&mut lane.unsubmitted) {
+             let seq = self.next_seq;
+             self.next_seq += 1;
+             match command {
+-                Command::Read(request) => lane.reads.push_back((seq, request)),
++                Command::Read(request) => lane.reads.push_back((seq, batch, request)),
+                 Command::Status(status) => lane.statuses.push_back((seq, status)),
+             }
+         }
+@@ -785,7 +788,8 @@ extern "system" fn close(this: QueueRef) {
+ }
+ 
+ /// Reads, inflates and/or unpacks, and writes one request.
+-fn execute(request: &Request) -> Result<(), HRESULT> {
++fn execute(job: &Job) -> Result<(), HRESULT> {
++    let request = &job.request;
+     let options = request.options;
+     let fail = |hr: HRESULT, why: &str| {
+         tracing::warn!(
+@@ -814,7 +818,7 @@ fn execute(request: &Request) -> Result<(), HRESULT> {
+             return Err(fail(E_INVALIDARG, "source larger than destination"));
+         }
+         let size = request.source_size as usize;
+-        return into_destination(request, size, |out| read_into(request, out).map(|()| size))
++        return into_destination(job, size, |out| read_into(request, out).map(|()| size))
+             .map_err(|hr| fail(hr, "copying"));
+     }
+     let tables = if bc != 0 { Some(bcpack_tables()?) } else { None };
+@@ -828,7 +832,7 @@ fn execute(request: &Request) -> Result<(), HRESULT> {
+     } else {
+         source
+     };
+-    into_destination(request, size, |out| match tables {
++    into_destination(job, size, |out| match tables {
+         Some(tables) => bcpack::decode(bc, &source, out, tables)
+             .map(|()| out.len())
+             .map_err(|e| fail(INVALID_DATA, &e.to_string())),
+@@ -944,10 +948,11 @@ fn read_into(request: &Request, out: &mut [u8]) -> Result<(), HRESULT> {
+ /// physical pages are too when they are consecutive pages of one
+ /// allocation, and otherwise go through a buffer.
+ fn into_destination(
+-    request: &Request,
++    job: &Job,
+     len: usize,
+     fill: impl FnOnce(&mut [u8]) -> Result<usize, HRESULT>,
+ ) -> Result<(), HRESULT> {
++    let request = &job.request;
+     if request.options & PAGE_DESTINATION == 0 {
+         // Raw reads land through the kernel, which does not fault into the
+         // GPU side's guard on title buffers; open them first.
+@@ -968,14 +973,36 @@ fn into_destination(
+     };
+     // Consecutive pages of one allocation (the usual case): written in
+     // place through one view.
+-    if let Some(mut window) = super::xmem::page_window(pages, offset, len) {
+-        return fill(window.bytes()).map(drop);
+-    }
++    let direct_error = match super::xmem::page_window(pages, offset, len) {
++        Ok(Some(mut window)) => return fill(window.bytes()).map(drop),
++        Ok(None) => None,
++        Err(error) => Some(error),
++    };
+     let mut data = vec![0; len];
+     let n = fill(&mut data)?;
+-    if super::xmem::write_physical(pages, offset, &data[..n]) {
+-        Ok(())
+-    } else {
++    if let Err(error) = super::xmem::write_physical(pages, offset, &data[..n]) {
++        static TOTAL: AtomicU64 = AtomicU64::new(0);
++        static BY_CAUSE: [AtomicU64; 5] = [const { AtomicU64::new(0) }; 5];
++        let total = TOTAL.fetch_add(1, Ordering::Relaxed) + 1;
++        let count = BY_CAUSE[error.category()].fetch_add(1, Ordering::Relaxed) + 1;
++        if count <= 4 || count.is_power_of_two() {
++            tracing::warn!(
++                cause = ?error,
++                direct = ?direct_error,
++                count,
++                total,
++                queue = job.lane,
++                batch = job.batch,
++                seq = job.seq,
++                source_bytes = request.source_size,
++                requested_bytes = len,
++                produced_bytes = n,
++                pages = pages.len(),
++                zlib = request.options & ZLIB != 0,
++                bcpack = (request.options & BCPACK) >> 1,
++                "dstorage: physical destination failure evidence"
++            );
++        }
+         // Said aloud: the title never reads a request's result
+         // (it only polls for completion), so a destination left unwritten
+         // is a model or texture that silently holds whatever its pages
+@@ -984,10 +1011,13 @@ fn into_destination(
+             offset,
+             len,
+             pages = pages.len(),
++            queue = job.lane,
++            batch = job.batch,
+             "dstorage: a destination's physical pages could not be written (unknown page or a host failure); its request fails"
+         );
+-        Err(E_INVALIDARG)
++        return Err(E_INVALIDARG);
+     }
++    Ok(())
+ }
+ 
+ /// Slots by the 2020 order, which the argument shapes at
+@@ -1287,6 +1317,66 @@ mod tests {
+         lane.unsubmitted.push(Command::Read(r));
+     }
+ 
++    #[test]
++    fn diagnostic_batch_identifies_a_submission_across_workers() {
++        let mut l = lanes(STAGING);
++        l.lanes.insert(7, Lane::new(0, 64));
++        read(&mut l, 7, 0, 1);
++        read(&mut l, 7, 0, 1);
++        l.submit(7);
++        read(&mut l, 7, 0, 1);
++        l.submit(7);
++        let a = l.start().unwrap();
++        let b = l.start().unwrap();
++        let c = l.start().unwrap();
++        assert_eq!((a.lane, b.lane, c.lane), (7, 7, 7));
++        assert_eq!(a.batch, b.batch);
++        assert_ne!(b.batch, c.batch);
++        assert_eq!((a.seq, b.seq, c.seq), (0, 1, 2));
++    }
++
++    #[test]
++    fn buffered_physical_write_uses_decoded_size_and_preserves_failure_result() {
++        use super::super::xmem::{XMemAllocatePhysicalPages, XMemFreePhysicalPages, page_window};
++        let mut pages = [0usize; 2];
++        let mut count = 1;
++        assert_eq!(
++            XMemAllocatePhysicalPages(0, &mut count, pages.as_mut_ptr()),
++            1
++        );
++        let mut job = Job {
++            lane: 7,
++            seq: 1,
++            batch: 0,
++            request: request(
++                PAGE_DESTINATION,
++                pages.as_mut_ptr().cast(),
++                PAGE + 1,
++                std::ptr::null(),
++                0,
++                0,
++            ),
++            staging: 0,
++        };
++        // The requested capacity covers a missing second page. A short fill
++        // lands entirely in the valid first page after the direct view fails.
++        assert_eq!(
++            into_destination(&job, PAGE + 1, |out| {
++                out[0] = 7;
++                Ok(1)
++            }),
++            Ok(())
++        );
++        assert_eq!(
++            page_window(&pages[..1], 0, 1).unwrap().unwrap().bytes(),
++            &[7]
++        );
++        // The same write to the missing page remains a failed request.
++        job.request.destination = pages[1..].as_mut_ptr().cast();
++        assert_eq!(into_destination(&job, 1, |_| Ok(1)), Err(E_INVALIDARG));
++        assert_eq!(XMemFreePhysicalPages(1, pages.as_ptr()), 1);
++    }
++
+     #[test]
+     fn priorities_share_by_bytes_about_tenfold() {
+         let mut l = lanes(STAGING);
+diff --git a/crates/victory-hle/src/modules/xmem.rs b/crates/victory-hle/src/modules/xmem.rs
+index 82e14ef..9ba7d9f 100644
+--- a/crates/victory-hle/src/modules/xmem.rs
++++ b/crates/victory-hle/src/modules/xmem.rs
+@@ -372,10 +372,12 @@ struct Physical {
+     views: BTreeMap<usize, (usize, Slice)>,
+ }
+ 
++const FIRST_PAGE: usize = 0x10_0000;
++
+ static PHYSICAL: LazyLock<Mutex<Physical>> = LazyLock::new(|| {
+     Mutex::new(Physical {
+         // Page numbers are opaque to titles; 0 stays unused.
+-        next_page: 0x10_0000,
++        next_page: FIRST_PAGE,
+         ..Default::default()
+     })
+ });
+@@ -475,9 +477,13 @@ struct View {
+ 
+ impl View {
+     /// Maps `n` slices from `slice` on.
+-    fn map(slice: &Slice, n: usize) -> Option<View> {
++    fn map(slice: &Slice, n: usize) -> Result<View, PhysicalError> {
+         use windows_sys::Win32::System::Memory::{FILE_MAP_WRITE, MapViewOfFile};
+-        let (offset, len) = ((slice.index * PAGE) as u64, n * PAGE);
++        let offset = slice
++            .index
++            .checked_mul(PAGE)
++            .ok_or(PhysicalError::Overflow)? as u64;
++        let len = n.checked_mul(PAGE).ok_or(PhysicalError::Overflow)?;
+         // SAFETY: slices of a section we own; the view is ours until dropped.
+         let at = unsafe {
+             MapViewOfFile(
+@@ -489,10 +495,13 @@ impl View {
+             )
+         };
+         if at.Value.is_null() {
+-            return None;
++            return Err(PhysicalError::Map(
++                std::io::Error::last_os_error().raw_os_error().unwrap_or(0),
++            ));
+         }
+         let view = View { at, len };
+-        commit(at.Value as usize, len).then_some(view)
++        commit(at.Value as usize, len).map_err(PhysicalError::Commit)?;
++        Ok(view)
+     }
+ 
+     fn bytes(&mut self) -> &mut [u8] {
+@@ -511,18 +520,52 @@ impl Drop for View {
+     }
+ }
+ 
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub(crate) enum PhysicalError {
++    Overflow,
++    TableTooShort,
++    UnknownPage {
++        zero: bool,
++        aligned: bool,
++        previously_issued: bool,
++    },
++    Map(i32),
++    Commit(i32),
++}
++
++impl PhysicalError {
++    pub(crate) fn category(self) -> usize {
++        match self {
++            Self::Overflow => 0,
++            Self::TableTooShort => 1,
++            Self::UnknownPage { .. } => 2,
++            Self::Map(_) => 3,
++            Self::Commit(_) => 4,
++        }
++    }
++}
++
+ /// The pages behind bytes `[offset, offset + len)` of `pages` (64 KiB
+ /// each), as runs of consecutive slices of one section: each run's first
+ /// slice and its length in pages. One look at the page table, which the
+-/// title's own mapping calls share with every DirectStorage worker. `None`
+-/// if a page is unknown or `pages` ends early.
+-fn runs(pages: &[usize], offset: usize, len: usize) -> Option<Vec<(Slice, usize)>> {
+-    let end = offset.checked_add(len)?;
+-    let pages = pages.get(offset / PAGE..end.div_ceil(PAGE))?;
++/// title's own mapping calls share with every DirectStorage worker.
++fn runs(pages: &[usize], offset: usize, len: usize) -> Result<Vec<(Slice, usize)>, PhysicalError> {
++    let end = offset.checked_add(len).ok_or(PhysicalError::Overflow)?;
++    let pages = pages
++        .get(offset / PAGE..end.div_ceil(PAGE))
++        .ok_or(PhysicalError::TableTooShort)?;
+     let physical = physical();
+     let mut runs: Vec<(Slice, usize)> = Vec::new();
+     for page in pages {
+-        let slice = physical.pages.get(page)?;
++        let slice = physical.pages.get(page).ok_or_else(|| {
++            // Numbers are issued consecutively, FRAMES apart, and never reused.
++            let aligned = page.is_multiple_of(FRAMES);
++            PhysicalError::UnknownPage {
++                zero: *page == 0,
++                aligned,
++                previously_issued: aligned && (FIRST_PAGE..physical.next_page).contains(page),
++            }
++        })?;
+         match runs.last_mut() {
+             Some((first, n))
+                 if Arc::ptr_eq(&first.section, &slice.section)
+@@ -533,28 +576,27 @@ fn runs(pages: &[usize], offset: usize, len: usize) -> Option<Vec<(Slice, usize)
+             _ => runs.push((slice.clone(), 1)),
+         }
+     }
+-    Some(runs)
++    Ok(runs)
+ }
+ 
+ /// Copies `data` into physical pages, from `offset` bytes into the first,
+ /// whether or not they are mapped anywhere (DirectStorage destinations).
+ /// One view per run of consecutive pages, not one per page: each view
+ /// costs a map, a commit and an unmap (which flushes every core's TLB).
+-/// False if a page is unknown or the host fails.
+-pub(crate) fn write_physical(pages: &[usize], offset: usize, data: &[u8]) -> bool {
+-    let Some(runs) = runs(pages, offset, data.len()) else {
+-        return false;
+-    };
++pub(crate) fn write_physical(
++    pages: &[usize],
++    offset: usize,
++    data: &[u8],
++) -> Result<(), PhysicalError> {
++    let runs = runs(pages, offset, data.len())?;
+     let (mut within, mut done) = (offset % PAGE, 0);
+     for (slice, n) in &runs {
+-        let Some(mut view) = View::map(slice, *n) else {
+-            return false;
+-        };
++        let mut view = View::map(slice, *n)?;
+         let k = (n * PAGE - within).min(data.len() - done);
+         view.bytes()[within..within + k].copy_from_slice(&data[done..done + k]);
+         (within, done) = (0, done + k);
+     }
+-    true
++    Ok(())
+ }
+ 
+ /// Bytes `[offset, offset + len)` of physical pages, writable in place
+@@ -575,19 +617,22 @@ impl PageWindow {
+ 
+ /// A window on bytes `[offset, offset + len)` of `pages` when they are
+ /// consecutive pages of one allocation (how titles usually hand them out);
+-/// `None` otherwise (pages of several allocations, out of order, or
+-/// unknown, or a host failure), which `write_physical` then handles or
+-/// reports.
+-pub(crate) fn page_window(pages: &[usize], offset: usize, len: usize) -> Option<PageWindow> {
++/// `Ok(None)` means the range has zero or several runs. On error the
++/// caller can still attempt a buffered write of the actual decoded size.
++pub(crate) fn page_window(
++    pages: &[usize],
++    offset: usize,
++    len: usize,
++) -> Result<Option<PageWindow>, PhysicalError> {
+     let runs = runs(pages, offset, len)?;
+     let [(slice, n)] = runs.as_slice() else {
+-        return None;
++        return Ok(None);
+     };
+-    Some(PageWindow {
++    Ok(Some(PageWindow {
+         view: View::map(slice, *n)?,
+         within: offset % PAGE,
+         len,
+-    })
++    }))
+ }
+ 
+ /// Maps `n` pages at `address`, in place of what is mapped there; null
+@@ -731,7 +776,7 @@ fn map(physical: &mut Physical, base: usize, len: usize, slice: Slice) -> bool {
+         );
+         return false;
+     }
+-    if !commit(base, len) {
++    if commit(base, len).is_err() {
+         // SAFETY: the view just mapped, back to a placeholder.
+         unsafe { UnmapViewOfFile2(GetCurrentProcess(), view, MEM_PRESERVE_PLACEHOLDER) };
+         return false;
+@@ -745,13 +790,13 @@ fn map(physical: &mut Physical, base: usize, len: usize, slice: Slice) -> bool {
+ }
+ 
+ /// Commits the section pages a view shows (once per page, whichever view).
+-fn commit(base: usize, len: usize) -> bool {
++fn commit(base: usize, len: usize) -> Result<(), i32> {
+     if on_wine() {
+-        return true; // sections are committed whole there
++        return Ok(()); // sections are committed whole there
+     }
+     // SAFETY: `[base, base + len)` is a view of a reserved section.
+     if !unsafe { VirtualAlloc(base as *const c_void, len, MEM_COMMIT, PAGE_READWRITE) }.is_null() {
+-        return true;
++        return Ok(());
+     }
+     let error = std::io::Error::last_os_error();
+     if error.raw_os_error() == Some(ERROR_COMMITMENT_LIMIT as i32) {
+@@ -765,7 +810,7 @@ fn commit(base: usize, len: usize) -> bool {
+     } else {
+         tracing::warn!(len, %error, "committing physical pages failed");
+     }
+-    false
++    Err(error.raw_os_error().unwrap_or(0))
+ }
+ 
+ fn commit_limit_message(
+@@ -1103,7 +1148,7 @@ mod tests {
+             a.cast::<u8>().write(1);
+         }
+         // Writes into pages (DirectStorage's) show through their views.
+-        assert!(write_physical(&pages[2..], 1, &[9]));
++        write_physical(&pages[2..], 1, &[9]).unwrap();
+         // SAFETY: mapped read-write.
+         assert_eq!(unsafe { at(b, 1).cast::<u8>().add(1).read() }, 9);
+ 
+@@ -1256,7 +1301,9 @@ mod tests {
+     fn runs_group_consecutive_pages_of_one_allocation() {
+         let (a, b) = (allocate(3), allocate(1));
+         let lengths = |pages: &[usize], offset, len| {
+-            runs(pages, offset, len).map(|r| r.iter().map(|&(_, n)| n).collect::<Vec<_>>())
++            runs(pages, offset, len)
++                .ok()
++                .map(|r| r.iter().map(|&(_, n)| n).collect::<Vec<_>>())
+         };
+         assert_eq!(lengths(&a, 0, 3 * PAGE), Some(vec![3]));
+         // Only the pages the bytes reach.
+@@ -1286,16 +1333,23 @@ mod tests {
+         let data: Vec<u8> = (0..2 * PAGE + 64).map(|i| (i * 7 % 251) as u8).collect();
+         let offset = PAGE - 32;
+         // Past the third page: the second run is too short.
+-        assert!(!write_physical(&pages, offset, &data));
+-        assert!(write_physical(&pages, offset, &data[..2 * PAGE]));
++        assert_eq!(
++            write_physical(&pages, offset, &data),
++            Err(PhysicalError::TableTooShort)
++        );
++        write_physical(&pages, offset, &data[..2 * PAGE]).unwrap();
+         let seen: Vec<u8> = pages.iter().flat_map(|&p| page_bytes(p)).collect();
+         assert!(seen[..offset].iter().all(|&b| b == 0), "before the offset");
+         assert_eq!(seen[offset..offset + 2 * PAGE], data[..2 * PAGE]);
+         assert!(seen[offset + 2 * PAGE..].iter().all(|&b| b == 0), "after");
+-        assert!(
+-            !write_physical(&[a[0], 0x10], 0, &data[..PAGE + 1]),
+-            "unknown page"
+-        );
++        assert!(matches!(
++            write_physical(&[a[0], 0x10], 0, &data[..PAGE + 1]),
++            Err(PhysicalError::UnknownPage {
++                zero: false,
++                aligned: true,
++                previously_issued: false,
++            })
++        ));
+         assert_eq!(XMemFreePhysicalPages(2, a.as_ptr()), 1);
+         assert_eq!(XMemFreePhysicalPages(1, b.as_ptr()), 1);
+     }
+@@ -1303,7 +1357,7 @@ mod tests {
+     #[test]
+     fn page_windows_cover_one_run_in_place() {
+         let (a, b) = (allocate(3), allocate(1));
+-        let mut window = page_window(&a, PAGE + 3, PAGE).expect("one run");
++        let mut window = page_window(&a, PAGE + 3, PAGE).unwrap().expect("one run");
+         assert_eq!(window.bytes().len(), PAGE);
+         window.bytes().fill(0x5a);
+         drop(window);
+@@ -1313,12 +1367,55 @@ mod tests {
+         assert!(third[..3].iter().all(|&b| b == 0x5a));
+         assert!(third[3..].iter().all(|&b| b == 0));
+         // Several runs, or an unknown page: no window.
+-        assert!(page_window(&[a[0], b[0]], 0, PAGE + 1).is_none());
+-        assert!(page_window(&[a[1], a[0]], 0, PAGE + 1).is_none());
+-        assert!(page_window(&[0x10], 0, 1).is_none());
++        assert!(page_window(&[a[0], b[0]], 0, PAGE + 1).unwrap().is_none());
++        assert!(page_window(&[a[1], a[0]], 0, PAGE + 1).unwrap().is_none());
++        assert!(matches!(
++            page_window(&[0x10], 0, 1),
++            Err(PhysicalError::UnknownPage { .. })
++        ));
+         // One page of several is still one run.
+-        assert!(page_window(&[a[0], b[0]], 0, PAGE).is_some());
++        assert!(page_window(&[a[0], b[0]], 0, PAGE).unwrap().is_some());
+         assert_eq!(XMemFreePhysicalPages(3, a.as_ptr()), 1);
+         assert_eq!(XMemFreePhysicalPages(1, b.as_ptr()), 1);
+     }
++
++    #[test]
++    fn physical_errors_distinguish_page_lookup_range_and_host_map() {
++        assert_eq!(
++            write_physical(&[], usize::MAX, &[1]),
++            Err(PhysicalError::Overflow)
++        );
++        assert_eq!(
++            write_physical(&[], 0, &[1]),
++            Err(PhysicalError::TableTooShort)
++        );
++        for (page, zero, aligned) in [(0, true, true), (usize::MAX, false, false)] {
++            assert_eq!(
++                write_physical(&[page], 0, &[1]),
++                Err(PhysicalError::UnknownPage {
++                    zero,
++                    aligned,
++                    previously_issued: false
++                })
++            );
++        }
++        let pages = allocate(1);
++        let mut slice = physical().pages[&pages[0]].clone();
++        if !on_wine() {
++            // A real owned view with an invalid size exercises the host error.
++            let view = View::map(&slice, 1).unwrap();
++            assert!(matches!(commit(view.at.Value as usize, 0), Err(code) if code != 0));
++        }
++        slice.index += 2; // outside the one-page test allocation
++        assert!(matches!(View::map(&slice, 1), Err(PhysicalError::Map(code)) if code != 0));
++        assert_eq!(XMemFreePhysicalPages(1, pages.as_ptr()), 1);
++        assert_eq!(
++            write_physical(&pages, 0, &[1]),
++            Err(PhysicalError::UnknownPage {
++                zero: false,
++                aligned: true,
++                previously_issued: true,
++            })
++        );
++    }
+ }

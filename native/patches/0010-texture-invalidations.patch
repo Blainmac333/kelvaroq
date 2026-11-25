@@ -1,0 +1,81 @@
+--- a/crates/victory-gpu/src/descriptor/host.rs
++++ b/crates/victory-gpu/src/descriptor/host.rs
+@@ -189,7 +189,8 @@
+ 
+ /// Title memory the runtime mapped, unmapped or is about to write since a
+ /// texture pass last took the ranges ([`remapped`]).
+-static REMAPPED: Mutex<Vec<(u64, u64)>> = Mutex::new(Vec::new());
++type Remapped = kelvaroq_render::dirty_ranges::DirtyRanges<{ 1 << 15 }>;
++static REMAPPED: Mutex<Remapped> = Mutex::new(Remapped::new());
+ 
+ /// The lowest start and the highest end of any span of [`Spans`] so far
+ /// (the start is `u64::MAX` until there is one): what the runtime does to
+@@ -201,7 +202,7 @@
+ 
+ /// Since the start: slots whose view a newer view of other memory there
+ /// made stale; ranges of memory noted as mapped, unmapped or written;
+-/// ranges dropped because no pass took them; slots made due by such
++/// ranges widened at capacity; slots made due by such
+ /// ranges; and made slots whose memory was found unmapped (made null).
+ pub(crate) static STALE: [std::sync::atomic::AtomicU64; 5] =
+     [const { std::sync::atomic::AtomicU64::new(0) }; 5];
+@@ -221,28 +222,15 @@
+ /// locks held: this locks one mutex of its own and calls nothing.
+ pub(crate) fn remapped(at: usize, len: usize) {
+     use std::sync::atomic::Ordering::Relaxed;
+-    /// Ranges kept until a pass takes them.
+-    const MOST: usize = 1 << 15;
+     let (start, end) = (at as u64, at.saturating_add(len) as u64);
+     if end <= SPANNED[0].load(Relaxed) || start >= SPANNED[1].load(Relaxed) {
+         return;
+     }
+     let mut ranges = REMAPPED.lock().unwrap_or_else(|e| e.into_inner());
+     STALE[1].fetch_add(1, Relaxed);
+-    // Pages are mapped one after the other.
+-    if let Some(last) = ranges.last_mut()
+-        && last.1 == start
+-    {
+-        last.1 = end;
+-        return;
+-    }
+-    if ranges.len() >= MOST {
+-        // No pass runs (no shader that picks textures by index is bound):
+-        // the slots there are looked at when they are due, as before.
+-        STALE[2].fetch_add(ranges.len() as u64, Relaxed);
+-        ranges.clear();
+-    }
+-    ranges.push((start, end));
++    if ranges.insert(start, end) {
++        STALE[2].fetch_add(1, Relaxed);
++    }
+ }
+ 
+ /// Frames for which a slot a draw read through a table counts as a table's
+@@ -832,13 +820,13 @@
+     /// whose pass runs first takes them (a title has one view heap).
+     pub(crate) fn texture_slots_remapped(&self, frame: u64) -> usize {
+         use std::sync::atomic::Ordering::Relaxed;
+-        let ranges = std::mem::take(&mut *REMAPPED.lock().unwrap_or_else(|e| e.into_inner()));
+-        if ranges.is_empty() {
++        let ranges = std::mem::take(&mut *REMAPPED.lock().unwrap_or_else(|e| e.into_inner())).into_ranges();
++        if ranges.len() == 0 {
+             return 0;
+         }
+         let mut slots: Vec<u32> = {
+             let placed = self.placed.lock().unwrap_or_else(|e| e.into_inner());
+-            ranges.iter().flat_map(|&(start, end)| placed.slots_in(start, end)).collect()
++            ranges.flat_map(|(start, end)| placed.slots_in(start, end)).collect()
+         };
+         slots.sort_unstable();
+         slots.dedup();
+--- a/crates/victory-gpu/src/host.rs
++++ b/crates/victory-gpu/src/host.rs
+@@ -5752,7 +5752,7 @@
+                      the draws that read them through tables, {} writes of tables' slots (due some frames later), {} slots taken out \
+                      as read through a table, {parts} uploads of textures not all mapped ({tails} of them without their first page), \
+                      {same} looks that found no more mapped; {} slots made stale by a newer view of other memory there, \
+-                     {} ranges of memory mapped, unmapped or written under texture views ({} dropped), {} slots made due by them, \
++                     {} ranges of memory mapped, unmapped or written under texture views ({} widened at capacity), {} slots made due by them, \
+                      {} made slots found unmapped and made null",
+                     crate::draw::HEAP_TEXTURES_TABLED.load(Ordering::Relaxed),
+                     crate::descriptor::host::TABLED_WRITES[0].load(Ordering::Relaxed),

@@ -23,7 +23,7 @@ def log_files(path):
     return files
 
 
-def parse_line(line):
+def parse_line(line, *, skip_frame_gaps=False):
     if MARKER not in line:
         return None
     fields = {}
@@ -39,6 +39,8 @@ def parse_line(line):
         raise ValueError("invalid frame range or numeric field")
     first, last = map(int, endpoints.groups())
     fields = {k: int(v) for k, v in fields.items()}
+    if skip_frame_gaps and fields.get("samples") == 30 and last - first > 30:
+        return None
     if fields.get("samples") != 30 or last - first != 30:
         raise ValueError("expected 30 consecutive frame intervals")
     try:
@@ -62,7 +64,7 @@ def parse_queue_sample(line):
     return (frame // 2, frame), {k: int(values[k]) for k in QUEUE_FIELDS}
 
 
-def read_run(path, *, queue_samples=None):
+def read_run(path, *, queue_samples=None, require_windows=True, skip_frame_gaps=False):
     windows = {}
     for file in log_files(path):
         with file.open("rb") as stream:
@@ -87,7 +89,7 @@ def read_run(path, *, queue_samples=None):
                                     "conflicting counts for the same queue interval"
                                 )
                             queue_samples[key] = counts
-                    parsed = parse_line(line)
+                    parsed = parse_line(line, skip_frame_gaps=skip_frame_gaps)
                     if parsed is None:
                         continue
                     key, fields = parsed
@@ -103,7 +105,7 @@ def read_run(path, *, queue_samples=None):
                     windows[key] = fields
                 except ValueError as error:
                     raise ValueError(f"{file.name} line {number}: {error}") from error
-    if not windows:
+    if require_windows and not windows:
         raise ValueError(f"no complete native timing windows in {path}")
     return windows
 
