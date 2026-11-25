@@ -1,0 +1,172 @@
+diff --git a/crates/victory-shader/src/emit/lower.rs b/crates/victory-shader/src/emit/lower.rs
+index 600139ae89213d68ea4256d01c5b435e030b0c49..48c02927ecd138fd8838bdfbfbb7b8fd8bfb3102 100644
+--- a/crates/victory-shader/src/emit/lower.rs
++++ b/crates/victory-shader/src/emit/lower.rs
+@@ -178,6 +178,8 @@ fn half_shift(width: u32) -> u32 {
+ }
+ 
+ struct Lower<'a> {
++    /// Blocks reached by an entire wave for direct cross-row permutes.
++    permute_blocks: std::cell::OnceCell<Option<Vec<bool>>>,
+     s: Shader,
+     x: &'a Parts<'a>,
+     bad: &'a HashMap<Value, Why>,
+@@ -1263,7 +1265,7 @@ impl<'a> Lower<'a> {
+                 n.starts_with("ds_swizzle")
+                     || n.contains("permute")
+                     || n.starts_with("v_mbcnt")
+-                    || matches!(n, "v_readlane_b32" | "v_writelane_b32")
++                    || matches!(n, "v_readlane_b32" | "v_writelane_b32" | "v_permlanex16_b32")
+                     || matches!(&i.fields, Fields::Valu(v) if v.dpp.is_some())
+                     || reads_mask_as_data(x.st, i)
+             }) || lane_constant_masks(x.st)
+@@ -1463,6 +1465,7 @@ impl<'a> Lower<'a> {
+             }
+         }
+         Lower {
++            permute_blocks: Default::default(),
+             s,
+             x,
+             bad,
+@@ -7188,6 +7191,50 @@ impl<'a> Lower<'a> {
+                 }
+                 Ok(())
+             }
++            "v_permlanex16_b32" => {
++                // Each group of 32 contains two 16-lane rows. Select one
++                // dword from the opposite row; selectors 0..7 come from
++                // src1 and 8..15 from src2, four bits per selector.
++                self.cross_lane(false)?;
++                if v.opsel != 0 || v.omod != 0 || v.clamp || v.sdwa.is_some() || v.dpp.is_some() {
++                    return Err("a modified cross-row permute");
++                }
++                if v.src.iter().skip(1).any(|op| matches!(op, Operand::Vector { .. })) {
++                    return Err("a cross-row permute with vector selectors");
++                }
++                // DXIL does not promise a value for a wave read from an
++                // inactive lane. Keep those cases explicit until modelled.
++                let complete = guard.is_none()
++                    && self.s.threads.is_some_and(|d| d.iter().product::<u32>().is_multiple_of(32))
++                    && self.permute_blocks
++                        .get_or_init(|| all_lane_blocks(self.x.st))
++                        .as_ref()
++                        .is_some_and(|blocks| blocks.get(self.cur_ir) == Some(&true));
++                if !complete {
++                    return Err("a cross-row permute with potentially inactive lanes");
++                }
++                let (value, lo, hi) = (s(self, 0)?, s(self, 1)?, s(self, 2)?);
++                let lane = self.lane_index();
++                let seven = self.s.m.i32(7);
++                let eight = self.s.m.i32(8);
++                let fifteen = self.s.m.i32(15);
++                let sixteen = self.s.m.i32(16);
++                let row_mask = self.s.m.i32(!15);
++                let two = self.s.m.i32(2);
++                let zero = self.s.m.i32(0);
++                let high_bit = self.s.m.bin(c, Bin::And, lane, eight);
++                let high = self.s.m.cmp(c, pred::NE, high_bit, zero);
++                let table = self.s.m.select(c, high, hi, lo);
++                let index = self.s.m.bin(c, Bin::And, lane, seven);
++                let shift = self.s.m.bin(c, Bin::Shl, index, two);
++                let shifted = self.s.m.bin(c, Bin::LShr, table, shift);
++                let pick = self.s.m.bin(c, Bin::And, shifted, fifteen);
++                let row = self.s.m.bin(c, Bin::And, lane, row_mask);
++                let other = self.s.m.bin(c, Bin::Xor, row, sixteen);
++                let source = self.s.m.bin(c, Bin::Or, other, pick);
++                let result = self.read_lane(value, source);
++                int(self, result)
++            }
+             "v_readlane_b32" => {
+                 let (a, lane) = (s(self, 0)?, s(self, 1)?);
+                 // A computed lane in a pixel or vertex program is a host lane
+diff --git a/crates/victory-shader/src/emit/valu_tests.rs b/crates/victory-shader/src/emit/valu_tests.rs
+index 5072d6c513e669a22e06df07ca745c1ccd3f2930..982d3fb8cb6460df541e8c26e71b2247d78e7e03 100644
+--- a/crates/victory-shader/src/emit/valu_tests.rs
++++ b/crates/victory-shader/src/emit/valu_tests.rs
+@@ -100,6 +100,14 @@ fn build_valu_cs(body: &[u32]) -> HostShader {
+ /// [`build_valu_cs`] with `threads` threads in x (thread index in `v0`
+ /// on entry, before `body`) and `lds_bytes` of LDS (a multiple of 512).
+ fn build_cs(body: &[u32], threads: u32, lds_bytes: u32) -> HostShader {
++    build_cs_with_store(body, threads, lds_bytes, false, false)
++}
++
++/// For indexed output the body leaves the thread index in v0 and the
++/// result in v1. Each thread then writes its own raw UAV element.
++fn build_cs_with_store(
++    body: &[u32], threads: u32, lds_bytes: u32, wave64: bool, indexed: bool,
++) -> HostShader {
+     let mut words = Vec::new();
+     // s[4:5] = descriptor table address (heap index 0 -> byte offset 0).
+     words.push(s_mov_b32(5, 0x80)); // inline constant 0
+@@ -110,13 +118,18 @@ fn build_cs(body: &[u32], threads: u32, lds_bytes: u32) -> HostShader {
+         words.push(vop1(0x001, i + 1, sgpr(i))); // v_mov_b32
+     }
+     words.extend_from_slice(body);
+-    words.extend_from_slice(&buffer_store_dword(0, 8, 0));
++    if indexed {
++        // v_lshlrev_b32 v3, 2, v0; buffer_store_dword v1, v3, s[8:11], 0 offen
++        words.extend_from_slice(&[0x3406_0082, 0xE070_1000, 0x8002_0103]);
++    } else {
++        words.extend_from_slice(&buffer_store_dword(0, 8, 0));
++    }
+     words.push(S_ENDPGM);
+ 
+     let code: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+     let native = NativeProgram {
+         stage: HwStage::Cs,
+-        wave64: false,
++        wave64,
+         vgprs: 8,
+         layout: vec![
+             RootParam {
+@@ -200,6 +213,50 @@ fn build_cs(body: &[u32], threads: u32, lds_bytes: u32) -> HostShader {
+ /// modules take this lock too.
+ pub(super) static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+ 
++#[test]
++fn permlanex16_reads_both_selector_tables_and_the_opposite_row() {
++    let _one = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
++    let host = match Host::new(false).or_else(|_| Host::new(true)) {
++        Ok(host) => host,
++        Err(e) => panic!("no SM 6.6 device for per-lane readback: {e}"),
++    };
++    let permute = vop3(0x378, 1, vgpr(0), sgpr(0), sgpr(1));
++    let columns = [3, 5, 7, 9, 11, 13, 15, 1, 2, 4, 6, 8, 10, 12, 14, 0];
++    for wave64 in [false, true] {
++        // Exercise the same 32-lane host target for both guest waves.
++        let previous = lower::TEST_HOST_WAVE.replace(Some(32));
++        let shader = build_cs_with_store(&permute, 64, 0, wave64, true);
++        lower::TEST_HOST_WAVE.set(previous);
++        let (root, pso) = host.compute_pipeline(&shader)
++            .unwrap_or_else(|e| panic!("compute PSO, wave64={wave64}: {e}"));
++        let mut data = vec![0; shader.user_data_dwords().max(1) as usize];
++        for u in &shader.user_data {
++            data[u.index as usize] = match (u.root, u.slot, u.dword) {
++                (RootType::Constants, 0, 0) => 0x1fdb_9753,
++                (RootType::Constants, 0, 1) => 0x0eca_8642,
++                _ => 0,
++            };
++        }
++        let output = host.dispatch(&root, &pso, &Dispatch {
++            roots: vec![(0, Root::Constants(data))],
++            views: &[View::RawUav(64)],
++            samplers: &[],
++            groups: [1, 1, 1],
++        }).expect("compute dispatch and readback");
++        let expected: Vec<_> = (0..64).map(|id| {
++            let other_row = [16, 0, 48, 32][id / 16];
++            other_row + columns[id % 16]
++        }).collect();
++        assert_eq!(output[0], expected, "wave64={wave64}");
++    }
++}
++
++#[test]
++#[should_panic(expected = "a cross-row permute with potentially inactive lanes")]
++fn permlanex16_refuses_a_partial_wave() {
++    build_cs_with_store(&vop3(0x378, 1, vgpr(0), sgpr(0), sgpr(1)), 24, 0, false, true);
++}
++
+ /// Runs `shader` on every available SM 6.6 host (hardware GPU and WARP) for
+ /// each 4-dword input set and invokes `check(backend, case_index, inputs, result_dword)`.
+ fn run_cases(

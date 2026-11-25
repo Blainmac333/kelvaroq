@@ -1,0 +1,301 @@
+diff --git a/crates/victory-hle/src/modules/dstorage.rs b/crates/victory-hle/src/modules/dstorage.rs
+index 4c35a62..d6dd05e 100644
+--- a/crates/victory-hle/src/modules/dstorage.rs
++++ b/crates/victory-hle/src/modules/dstorage.rs
+@@ -368,7 +368,7 @@ struct Lane {
+     unsubmitted: Vec<Command>,
+     /// Submitted, by sequence number: reads not started, status entries
+     /// not written, reads running, and failures not yet reported.
+-    reads: VecDeque<(u64, u64, Request)>, // sequence, first sequence of submit, request
++    reads: VecDeque<(u64, u64, QueuedRead)>, // sequence, first sequence of submit, request
+     statuses: VecDeque<(u64, Status)>,
+     running: BTreeSet<u64>,
+     failures: BTreeMap<u64, HRESULT>,
+@@ -386,6 +386,7 @@ struct Job {
+     seq: u64,
+     batch: u64,
+     request: Request,
++    first_page: PageAtEnqueue,
+     staging: u64,
+ }
+ 
+@@ -507,7 +508,14 @@ impl Lanes {
+             .filter_map(|(&id, l)| Some((l.clock, l.reads.front()?.0, id)))
+             .min()?;
+         let lane = self.lanes.get_mut(&id)?;
+-        let &(seq, batch, request) = lane.reads.front()?;
++        let &(
++            seq,
++            batch,
++            QueuedRead {
++                request,
++                first_page,
++            },
++        ) = lane.reads.front()?;
+         let staging = staging_bytes(&request);
+         if self.staged > 0 && self.staged + staging > self.staging {
+             self.starved = true;
+@@ -527,6 +535,7 @@ impl Lanes {
+             seq,
+             batch,
+             request,
++            first_page,
+             staging,
+         })
+     }
+@@ -687,8 +696,92 @@ const MEMORY_SOURCE: u64 = 1 << 22;
+ 
+ const PAGE: usize = 64 * 1024;
+ 
++#[derive(Clone, Copy)]
++struct QueuedRead {
++    request: Request,
++    first_page: PageAtEnqueue,
++}
++
++// The page number is kept only for equality. Only the separate, address-free
++// comparison below can be formatted for logs.
++#[derive(Clone, Copy)]
++enum PageAtEnqueue {
++    Off,
++    Unreadable,
++    Read { number: usize, known: bool },
++}
++
++#[derive(Debug, PartialEq, Eq)]
++enum FirstPageComparison {
++    Off,
++    UnreadableAtEnqueue,
++    EmptyAtWorker,
++    Observed {
++        enqueue_zero: bool,
++        enqueue_known: bool,
++        worker_zero: bool,
++        same: bool,
++    },
++}
++
++impl PageAtEnqueue {
++    fn capture(request: &Request, enabled: bool) -> Self {
++        use windows_sys::Win32::System::{
++            Diagnostics::Debug::ReadProcessMemory, Threading::GetCurrentProcess,
++        };
++        let size = if request.options & (ZLIB | BCPACK) == 0 {
++            request.source_size
++        } else {
++            request.destination_size
++        };
++        if !enabled
++            || request.options & PAGE_DESTINATION == 0
++            || request.destination.is_null()
++            || size == 0
++        {
++            return Self::Off;
++        }
++        let mut number = 0usize;
++        let mut copied = 0;
++        // SAFETY: the kernel reads exactly one metadata word, even for a
++        // multi-page request. An inaccessible list is only a diagnostic outcome.
++        let ok = unsafe {
++            ReadProcessMemory(
++                GetCurrentProcess(),
++                request.destination,
++                (&mut number as *mut usize).cast(),
++                size_of::<usize>(),
++                &mut copied,
++            )
++        };
++        if ok == 0 || copied != size_of::<usize>() {
++            return Self::Unreadable;
++        }
++        Self::Read {
++            number,
++            known: super::xmem::has_physical_page(number),
++        }
++    }
++
++    fn compare(self, pages: &[usize]) -> FirstPageComparison {
++        match self {
++            Self::Off => FirstPageComparison::Off,
++            Self::Unreadable => FirstPageComparison::UnreadableAtEnqueue,
++            Self::Read { number, known } => match pages.first() {
++                Some(&current) => FirstPageComparison::Observed {
++                    enqueue_zero: number == 0,
++                    enqueue_known: known,
++                    worker_zero: current == 0,
++                    same: current == number,
++                },
++                None => FirstPageComparison::EmptyAtWorker,
++            },
++        }
++    }
++}
++
+ enum Command {
+-    Read(Request),
++    Read(QueuedRead),
+     Status(Status),
+ }
+ 
+@@ -717,7 +810,17 @@ extern "system" fn enqueue_request(this: QueueRef, request: *const Request) {
+     let Some(&request) = (unsafe { request.as_ref() }) else {
+         return;
+     };
+-    queue(this, Command::Read(request));
++    static CAPTURE: OnceLock<bool> = OnceLock::new();
++    let enabled = *CAPTURE
++        .get_or_init(|| std::env::var_os("KELVAROQ_STORAGE_CAPTURE").is_some_and(|v| v == "1"));
++    let first_page = PageAtEnqueue::capture(&request, enabled);
++    queue(
++        this,
++        Command::Read(QueuedRead {
++            request,
++            first_page,
++        }),
++    );
+ }
+ 
+ extern "system" fn enqueue_status(this: QueueRef, array: Array, index: u32) {
+@@ -973,6 +1076,25 @@ fn into_destination(
+     };
+     // Consecutive pages of one allocation (the usual case): written in
+     // place through one view.
++    let comparison = job.first_page.compare(pages);
++    if matches!(
++        comparison,
++        FirstPageComparison::Observed { same: false, .. }
++    ) {
++        static CHANGED: AtomicU64 = AtomicU64::new(0);
++        let changed = CHANGED.fetch_add(1, Ordering::Relaxed) + 1;
++        if changed <= 4 || changed.is_power_of_two() {
++            tracing::warn!(
++                ?comparison,
++                changed,
++                queue = job.lane,
++                batch = job.batch,
++                seq = job.seq,
++                pages = pages.len(),
++                "dstorage: first destination page changed after enqueue"
++            );
++        }
++    }
+     let direct_error = match super::xmem::page_window(pages, offset, len) {
+         Ok(Some(mut window)) => return fill(window.bytes()).map(drop),
+         Ok(None) => None,
+@@ -989,6 +1111,7 @@ fn into_destination(
+             tracing::warn!(
+                 cause = ?error,
+                 direct = ?direct_error,
++                first_page = ?comparison,
+                 count,
+                 total,
+                 queue = job.lane,
+@@ -1314,7 +1437,10 @@ mod tests {
+         let mut r = request(options, std::ptr::null_mut(), 0, std::ptr::null(), 0, 0);
+         (r.destination_size, r.source_size) = (size, size);
+         let lane = lanes.lanes.get_mut(&id).unwrap();
+-        lane.unsubmitted.push(Command::Read(r));
++        lane.unsubmitted.push(Command::Read(QueuedRead {
++            request: r,
++            first_page: PageAtEnqueue::Off,
++        }));
+     }
+ 
+     #[test]
+@@ -1335,6 +1461,72 @@ mod tests {
+         assert_eq!((a.seq, b.seq, c.seq), (0, 1, 2));
+     }
+ 
++    #[test]
++    fn enqueue_probe_preserves_zero_and_reports_late_changes_without_using_the_copy() {
++        use super::super::xmem::{XMemAllocatePhysicalPages, XMemFreePhysicalPages};
++        use FirstPageComparison::*;
++        let mut count = 1;
++        let mut allocated = 0usize;
++        assert_eq!(XMemAllocatePhysicalPages(0, &mut count, &mut allocated), 1);
++        let mut pages = [allocated, 0];
++        let r = request(
++            PAGE_DESTINATION,
++            pages.as_mut_ptr().cast(),
++            PAGE + 1,
++            std::ptr::null(),
++            0,
++            PAGE + 1,
++        );
++        let first = PageAtEnqueue::capture(&r, true);
++        assert_eq!(
++            first.compare(&pages),
++            Observed {
++                enqueue_zero: false,
++                enqueue_known: true,
++                worker_zero: false,
++                same: true
++            }
++        );
++        pages[0] = 0;
++        assert_eq!(
++            first.compare(&pages),
++            Observed {
++                enqueue_zero: false,
++                enqueue_known: true,
++                worker_zero: true,
++                same: false
++            }
++        );
++        let zero = PageAtEnqueue::capture(&r, true);
++        assert_eq!(
++            zero.compare(&pages),
++            Observed {
++                enqueue_zero: true,
++                enqueue_known: false,
++                worker_zero: true,
++                same: true
++            }
++        );
++        pages[0] = allocated;
++        assert_eq!(
++            zero.compare(&pages),
++            Observed {
++                enqueue_zero: true,
++                enqueue_known: false,
++                worker_zero: false,
++                same: false
++            }
++        );
++        let mut r = r;
++        r.destination = std::ptr::dangling_mut::<usize>().cast();
++        assert_eq!(PageAtEnqueue::capture(&r, false).compare(&[]), Off);
++        assert_eq!(
++            PageAtEnqueue::capture(&r, true).compare(&[]),
++            UnreadableAtEnqueue
++        );
++        assert_eq!(XMemFreePhysicalPages(1, &allocated), 1);
++    }
++
+     #[test]
+     fn buffered_physical_write_uses_decoded_size_and_preserves_failure_result() {
+         use super::super::xmem::{XMemAllocatePhysicalPages, XMemFreePhysicalPages, page_window};
+@@ -1348,6 +1540,7 @@ mod tests {
+             lane: 7,
+             seq: 1,
+             batch: 0,
++            first_page: PageAtEnqueue::Off,
+             request: request(
+                 PAGE_DESTINATION,
+                 pages.as_mut_ptr().cast(),
+diff --git a/crates/victory-hle/src/modules/xmem.rs b/crates/victory-hle/src/modules/xmem.rs
+index 9ba7d9f..13f4ffa 100644
+--- a/crates/victory-hle/src/modules/xmem.rs
++++ b/crates/victory-hle/src/modules/xmem.rs
+@@ -386,6 +386,11 @@ fn physical() -> MutexGuard<'static, Physical> {
+     PHYSICAL.lock().unwrap_or_else(|e| e.into_inner())
+ }
+ 
++/// Diagnostic membership at the moment the queue receives the page list.
++pub(crate) fn has_physical_page(page: usize) -> bool {
++    page != 0 && physical().pages.contains_key(&page)
++}
++
+ /// `count` is in and out (pages wanted, pages given); all or nothing here.
+ pub extern "system" fn XMemAllocatePhysicalPages(
+     flags: u64,

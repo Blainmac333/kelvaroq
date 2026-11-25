@@ -1,0 +1,116 @@
+diff --git a/crates/victory-gpu/src/shadow.rs b/crates/victory-gpu/src/shadow.rs
+index 58b7d6edd9d299c345a0352105d58105ae144975..527220a396b8170e1e6064276bc0afe9c96d6cbb 100644
+--- a/crates/victory-gpu/src/shadow.rs
++++ b/crates/victory-gpu/src/shadow.rs
+@@ -848,39 +848,35 @@ fn give_back(v: Vec<u8>) {
+ 
+ const NOT_WATCHED: u8 = 2;
+ 
+-/// Where `a` and `b` (of one length) first differ, compared eight bytes at
+-/// a time.
+-fn first_difference(a: &[u8], b: &[u8]) -> Option<usize> {
+-    let whole = a.len().min(b.len()) / 8 * 8;
+-    let from = a[..whole]
+-        .as_chunks::<8>().0.iter()
+-        .zip(b[..whole].chunks_exact(8))
+-        .position(|(x, y)| x != y)
+-        .map_or(whole, |word| word * 8);
+-    a[from..].iter().zip(&b[from..]).position(|(x, y)| x != y).map(|i| from + i)
+-}
+-
+-/// Where `a` and `b` (of one length) last differ.
+-fn last_difference(a: &[u8], b: &[u8]) -> Option<usize> {
+-    let whole = a.len().min(b.len()) / 8 * 8;
+-    if let Some(i) = a[whole..].iter().zip(&b[whole..]).rposition(|(x, y)| x != y) {
+-        return Some(whole + i);
+-    }
+-    let word = a[..whole]
+-        .as_chunks::<8>().0.iter()
+-        .zip(b[..whole].chunks_exact(8))
+-        .rposition(|(x, y)| x != y)?
+-        * 8;
+-    a[word..word + 8]
+-        .iter()
+-        .zip(&b[word..word + 8])
+-        .rposition(|(x, y)| x != y)
+-        .map(|i| word + i)
++use kelvaroq_render::shadow_bytes::{first_difference, last_difference, read_scratch};
++
++/// Cut backwards to a piece boundary inside the span being scanned.
++fn scan_boundary(start: usize, from: usize, at: usize) -> usize {
++    at.saturating_sub((start + at) % PIECE).max(from)
+ }
+ 
+ #[cfg(test)]
+ mod difference_tests {
+-    use super::{first_difference, last_difference};
++    use super::{PIECE, first_difference, last_difference, scan_boundary};
++
++    #[test]
++    fn unaligned_parallel_scan_covers_the_first_piece() {
++        let span = 48 << 20;
++        for start in [0, 1, 31, PIECE - 1] {
++            for from in [0, 1, 31, PIECE - 1, PIECE + 3] {
++                let end = from + span;
++                let cuts = [scan_boundary(start, from, from),
++                            scan_boundary(start, from, from + span / 3),
++                            scan_boundary(start, from, from + 2 * span / 3), end];
++                assert_eq!(cuts[0], from);
++                assert!(cuts.windows(2).all(|pair| pair[0] < pair[1]));
++                assert_eq!((start + cuts[1]) % PIECE, 0);
++                assert_eq!((start + cuts[2]) % PIECE, 0);
++                assert_eq!(cuts.windows(2).map(|pair| pair[1] - pair[0]).sum::<usize>(), span);
++            }
++        }
++    }
++
+ 
+     /// The word-wise searches agree with the byte-wise ones they replace.
+     #[test]
+@@ -1914,7 +1910,7 @@ impl Shadow {
+             for &(at, n) in &differing {
+                 self.changed(at, at + n);
+             }
+-            let mut title = vec![0u8; PIECE];
++            let mut title = Vec::new();
+             for (at, n) in differing {
+                 // SAFETY: inside the mapping; only the submitting thread
+                 // writes it.
+@@ -1930,7 +1926,7 @@ impl Shadow {
+                 let last = last_difference(host, old).unwrap_or(first);
+                 let (at, n) = (at + first, last + 1 - first);
+                 let (host, old) = (&mut host[first..=last], &old[first..=last]);
+-                let title = &mut title[..n];
++                let title = read_scratch(&mut title, n);
+                 if !crate::host::read_into((start + at) as *const u8, title) {
+                     continue;
+                 }
+@@ -2028,8 +2024,7 @@ impl Shadow {
+         let last = last_difference(now, held).unwrap_or(first);
+         let (at, n) = (at + first, last + 1 - first);
+         let (now, held) = (&now[first..=last], &mut held[first..=last]);
+-        title.clear();
+-        title.resize(n, 0);
++        let title = read_scratch(title, n);
+         // Title memory not there: looked at again when the next flight
+         // that declared the range lands (the snapshot stays as it is).
+         if !crate::host::read_into((start + at) as *const u8, title) {
+@@ -2075,7 +2070,7 @@ impl Shadow {
+                 return to;
+             }
+             let at = from + (to - from) / threads * i;
+-            (at - (start + at) % PIECE).max(from)
++            scan_boundary(start, from, at)
+         };
+         let scan = &scan;
+         std::thread::scope(|s| {
+@@ -2551,8 +2546,7 @@ impl Shadow {
+         let last = last_difference(gpu, old).unwrap_or(first);
+         let (at, n) = (at + first, last + 1 - first);
+         let (gpu, old) = (&gpu[first..=last], &mut old[first..=last]);
+-        title.clear();
+-        title.resize(n, 0);
++        let title = read_scratch(title, n);
+         let mut written = 0;
+         if crate::host::read_into((start + at) as *const u8, title) {
+             // As in `copy_back`: the card's byte where it is not what it
