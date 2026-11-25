@@ -27,6 +27,7 @@ Les options ci-dessous sont désactivées par défaut. Elles se règlent avant l
 | `VICTORY_GPU_CONSTANT_FILLS=1` | Essaie une copie GPU pour les constantes de table couvertes par une écriture GPU antérieure et dont l’ordre peut être établi. Les autres constantes conservent leur remplissage à la soumission. |
 | `VICTORY_RECYCLE_COMPARE_SLOTS=1` | Réutilise les emplacements des comparaisons une fois la soumission terminée et ses résultats lus. Le journal compte séparément les attentes dues à l’espace de résultats. |
 | `VICTORY_RELAY_COPY_RUNS=1` | Regroupe deux copies de relecture qui se suivent dans le même tampon GPU et dans le tampon de destination. Chaque morceau conserve ensuite sa propre vérification des écritures CPU. |
+| `VICTORY_QUEUE2_KEEP_LANDINGS=1` | Avec `VICTORY_QUEUE2=2` ou `3`, conserve les tampons de transfert réutilisables quand un envoi RAM–VRAM dépasse le budget disponible. La file graphique attend sur le GPU la fin des copies qu’elle va consommer. |
 | `VICTORY_SCOPED_CARD_BARRIERS=1` | Avec la récupération en vol, ordonne la lecture des résultats de comparaison sur le seul tampon qui les transmet au traitement suivant. La première barrière de la liste couvre toujours toutes les écritures invitées. |
 | `VICTORY_SCATTER_RUNS=1` | Prend les verrous une fois pour un groupe d’au plus 64 entrées Scatter. Chaque page garde sa propre vue Windows et sa protection, même quand une page voisine est remappée. Les destinations déjà occupées et les échecs conservent l’ordre des opérations. |
 | `VICTORY_DESCRIPTOR_SYNC_BATCH=1` | Compare par groupes les enregistrements de descripteurs écrits en mémoire invitée. Les écritures par l’API et les restaurations par copie brute sont prises en compte. |
@@ -37,6 +38,8 @@ Les options ci-dessous sont désactivées par défaut. Elles se règlent avant l
 Le placement `GPU_UPLOAD` et la restitution du budget à la dernière référence s’appuient sur les travaux de 0xkn0wh3r3. Les petits buffers dont le contenu peut être modifié via un alias utilisent le mécanisme de comparaison du fork. [Proposition amont sur le placement en VRAM](https://github.com/Marvisak/VIctory/pull/2120) · [Proposition amont sur le miroir CPU](https://github.com/Marvisak/VIctory/pull/2130)
 
 Avec `VICTORY_TEXTURE_NO_WAIT=1`, une texture déjà chargée peut garder son image pendant une tentative de remappage. Le premier chargement et une deuxième tentative consécutive attendent une vue stable des pages. Pour les textures à mipmaps éparses, la sélection des niveaux et la lecture de leur contenu utilisent la même vue mémoire.
+
+XCL envoie les régions modifiées vers ses ressources GPU via un tampon de transfert circulaire et ordonne leur utilisation par une fence entre files. Kelvaroq utilise les tampons de transfert et les fences du fork. Un envoi trop gros pour le budget peut revenir à la file directe pendant que les petits tampons servent aux envois suivants. [Transferts de mémoire paginée de XCL](https://github.com/xcl-dev/xcl/blob/main/crates/xcl/src/hle/d3d12x/sparse.rs)
 
 ### Mesure de la scène lourde
 
