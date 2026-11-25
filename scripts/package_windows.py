@@ -196,6 +196,8 @@ def package(archive, release, cache, metadata, native):
         put(archive, dest, data)
     put(archive, "native/build.json", receipt)
     put(archive, "LICENSE.txt", (ROOT / "LICENSE").read_bytes())
+    # The reference CPU module imports Unicorn (GPLv2 only): GPL-2.0-or-later.
+    put(archive, "runtime/kelvaroq_reference/LICENSE", (ROOT / "research/LICENSE").read_bytes())
     for module in sorted((ROOT / "research/kelvaroq_reference").glob("*.py")):
         put(archive, "runtime/kelvaroq_reference/" + module.name, module.read_bytes())
     with zipfile.ZipFile(cache / PYTHON) as python:
@@ -228,6 +230,9 @@ def package(archive, release, cache, metadata, native):
         archive,
         "notices/README.txt",
         (
+            b"Kelvaroq is free software under the GNU General Public License, version 3 or "
+            b"later (LICENSE.txt); its reference CPU module (runtime/kelvaroq_reference) is "
+            b"under version 2 or later (runtime/kelvaroq_reference/LICENSE).\n"
             b"Native play uses the VIctory backend and Kelvaroq rendering code. "
             b"See notices/native/LICENSE, native/build.json and sources/native.zip.\n"
             b"The reference CPU uses CPython 3.14.10 (runtime/LICENSE.txt and notices/python), "

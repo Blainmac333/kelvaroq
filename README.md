@@ -62,7 +62,7 @@ Git et Cargo sont nécessaires. Le premier lancement récupère les révisions, 
 - Pour les choix d’architecture, les critères de compatibilité et le protocole de mesure, lire [documentation.md](documentation.md).
 - Pour les observations sur le binaire, les adresses et l’arrêt reproductible, consulter le [carnet de décompilation](décompile.md).
 
-Le dépôt contient le code, le logo et des programmes de test générés à partir de sources originales. **Il ne contient aucun fichier, code ou ressource d’un jeu** : le fichier étudié est fourni localement par l’opérateur, à partir de sa propre copie. Le projet n’est ni affilié ni approuvé par le développeur ou l’éditeur d’un jeu. Les conditions applicables au projet figurent dans [LICENSE](LICENSE).
+Le dépôt contient le code, le logo et des programmes de test générés à partir de sources originales. **Il ne contient aucun fichier, code ou ressource d’un jeu** : le fichier étudié est fourni localement par l’opérateur, à partir de sa propre copie. Le projet n’est ni affilié ni approuvé par le développeur ou l’éditeur d’un jeu.
 
 ## Crédits
 
@@ -73,3 +73,12 @@ Le moteur natif de Kelvaroq, qui affiche son nom dans la fenêtre du jeu, est co
 - **[Unicorn](https://github.com/unicorn-engine/unicorn)** exécute le moteur CPU de référence. Licence GPLv2.
 
 Kelvaroq apporte le lanceur, le crate de rendu `native/kelvaroq-render`, les correctifs de `native/patches`, le moteur de référence et les outils de mesure.
+
+## Licence
+
+Kelvaroq est un logiciel libre. Copyright © 2026 Stellarr Studio et les contributeurs de Kelvaroq.
+
+- **Le dépôt est distribué sous GPL-3.0-or-later** ([LICENSE](LICENSE)) : la licence de VIctory, dont dérivent les correctifs et le moteur natif fourni dans le paquet Windows.
+- **Le dossier `research/` est sous GPL-2.0-or-later** ([research/LICENSE](research/LICENSE)), parce que le moteur de référence importe Unicorn, publié sous GPLv2 seulement.
+
+Le paquet Windows contient les sources du moteur natif (`sources/native.zip`) et les notices des composants tiers. Ce programme est fourni sans aucune garantie, dans les limites prévues par la licence.
