@@ -125,6 +125,27 @@ Le compteur de la carte du fork aboutissait à la même conclusion (102 ms sur 1
 - 0042 compte sur la ligne de cadence les commandes indirectes encore bornées, par type, et la raison pour laquelle une fusion des octets du titre sous les écritures des vols renonce.
 - 0043 met le nom de Kelvaroq dans le titre de la fenêtre et sur la fenêtre de secours du moteur. Les crédits de VIctory et du fork figurent dans le README.
 
+### Copies de la mémoire du titre dans le processus (correctif 0044)
+
+**Diagnostic.** Après 0041–0042, la carte attend le fil de soumission ~75 ms par image lourde. Ce fil prépare ~86 ms, dont 45 à 50 ms de copies pour ~150 Mo, chaque plage lue par `ReadProcessMemory`.
+
+**Décision.** Les lectures de 256 octets et plus vers nos propres tampons se font dans le processus (`plaincopy.rs`) : une instruction `rep movsb` en assembleur. Un gestionnaire d'exceptions vectorisé ne récupère que les fautes de **lecture** sur cette instruction et rejoue la plage par le noyau. Le bloc de 64 Kio fautif repasse par le noyau pendant deux secondes. Les fautes d'écriture vont toujours aux gardes de pages. Les écritures dans la mémoire du titre et les lectures de moins de 256 octets restent sur le noyau. Repris du fork (`VICTORY_COPY_PLAIN`, a253706 et 0b0074e), actif par défaut ici ; `VICTORY_COPY_PLAIN=0` revient à l'ancien chemin.
+
+**Mesure en jeu** (deux passages de 300 s, même sauvegarde et même cache, build de diagnostic). Les deux passages n'étant pas au même endroit de la scène, la comparaison se fait par tranche de dessins :
+
+| Dessins par image | p50 A → B | p95 A → B |
+| --- | ---: | ---: |
+| 3 000–4 000 | 90,8 → 91,0 ms | 108,8 → 170,8 ms |
+| 4 000–5 000 | 95,6 → 97,6 ms | 1 182,7 → 193,7 ms |
+| 5 000–6 000 | 118,7 → 109,0 ms | 282,7 → 160,6 ms |
+| 6 000–8 000 | 122,6 → 114,1 ms | 187,1 → 168,8 ms |
+| 8 000 et plus | 148,7 → 131,2 ms | 1 727,0 → 212,6 ms |
+
+- 7 à 12 % de moins sur les images les plus chargées ; les pics de plus d'une seconde disparaissent.
+- Le p95 de la tranche 3 000–4 000 est moins bon dans B, sur 56 images seulement.
+- ~13 400 lectures directes et ~4 400 lectures noyau par image. Les copies passent d'environ 0,34 à 0,28 ms par Mo : le temps de copie ne vient pas surtout de l'appel noyau, mais de ce qui entoure chaque lecture (~2,5 µs par lecture).
+- Image intacte sur les captures. 186 tests du moteur GPU et 102 de `victory-hle` passent.
+
 **Reste à construire.**
 - **Le côté CPU limite désormais l'image** (~120 ms) : une attente d'environ 80 ms par image quand le titre réécrit une mémoire que des vols écrivent, les copies de mémoire du titre (~55 ms), la recopie des écritures GPU (~30 ms).
 - **Les ~1 420 autres commandes indirectes par image** (dessins non mesh, dispatchs de calcul) gardent leur passe de bornage et ses deux attentes.
