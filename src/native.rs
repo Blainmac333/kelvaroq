@@ -9,11 +9,38 @@ use windows::{
     core::w,
 };
 
-pub(crate) fn run(engine: &Path, image: &Path, console: &str) -> Result<ExitCode> {
+// A process-local test profile. An explicit per-feature setting always wins.
+const EXPERIMENTAL_RENDER: &[(&str, &str)] = &[
+    ("VICTORY_GPU_UPLOAD_READONLY_MB", "256"),
+    ("VICTORY_CARD_READONLY_MB", "128"),
+    ("VICTORY_RECYCLE_COMPARE_SLOTS", "1"),
+    ("VICTORY_GPU_CONSTANT_FILLS", "1"),
+    ("VICTORY_TEXTURE_NO_WAIT", "1"),
+    ("VICTORY_DESCRIPTOR_SYNC_BATCH", "1"),
+    ("VICTORY_ROOT_BIND_CACHE", "1"),
+    ("VICTORY_RELAY_COPY_RUNS", "1"),
+    ("VICTORY_PIPELINE_EARLY_WITHOUT_LIBRARY", "1"),
+    ("VICTORY_SCOPED_CARD_BARRIERS", "1"),
+];
+
+pub(crate) fn run(
+    engine: &Path,
+    image: &Path,
+    console: &str,
+    experimental_render: bool,
+) -> Result<ExitCode> {
     // Give the native file services a conventional DOS path when it names
     // the same file. Keep the extended form for paths that require it.
     let image = dunce::canonicalize(image).context("ouverture de l’exécutable du jeu")?;
     let mut game = Command::new(engine);
+    if experimental_render {
+        game.envs(
+            EXPERIMENTAL_RENDER
+                .iter()
+                .copied()
+                .filter(|(key, _)| std::env::var_os(key).is_none()),
+        );
+    }
     game.current_dir(engine.parent().context("dossier du moteur natif")?)
         .env(
             "VICTORY_GAME_DIR",

@@ -44,7 +44,8 @@ mod launcher {
     const PICK_FOLDER: usize = 102;
 
     pub(super) fn run() -> Result<ExitCode> {
-        let mut args = std::env::args_os().skip(1);
+        let mut args = std::env::args_os().skip(1).peekable();
+        let experimental = args.next_if(|arg| arg == "--experimental-render").is_some();
         let argument = args.next();
         if args.next().is_some() {
             bail!("Ouvrez un seul dossier ou fichier .exe à la fois.");
@@ -57,9 +58,12 @@ mod launcher {
             },
         };
         let cli = companion(&std::env::current_exe()?)?;
-        let result = Command::new(&cli)
-            .env("KELVAROQ_DESKTOP_LOG", "1")
-            .arg("play")
+        let mut play = Command::new(&cli);
+        play.env("KELVAROQ_DESKTOP_LOG", "1").arg("play");
+        if experimental {
+            play.arg("--experimental-render");
+        }
+        let result = play
             .arg("--")
             .arg(&image)
             .creation_flags(DETACHED_PROCESS.0)

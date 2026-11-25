@@ -39,6 +39,9 @@ enum Action {
         /// Use the instrumented reference CPU even when the native backend is installed.
         #[arg(long)]
         reference: bool,
+        /// Try the native renderer's experimental memory and command optimizations.
+        #[arg(long, conflicts_with_all = ["reference", "python", "processor_info", "host_topology"])]
+        experimental_render: bool,
     },
     /// Verify offscreen D3D12 rendering and readback on hardware adapters.
     Gpu {
@@ -147,7 +150,11 @@ fn run(args: Args) -> Result<ExitCode> {
             }
         }
         Action::Boot(options) => return options.run(false),
-        Action::Play { options, reference } => {
+        Action::Play {
+            options,
+            reference,
+            experimental_render,
+        } => {
             #[cfg(windows)]
             if !reference
                 && options.python.is_none()
@@ -159,11 +166,14 @@ fn run(args: Args) -> Result<ExitCode> {
                     .join("victory.exe");
                 if engine.is_file() {
                     let image = package::image_path(&options.image)?;
-                    return native::run(&engine, &image, &options.console);
+                    return native::run(&engine, &image, &options.console, experimental_render);
                 }
             }
             #[cfg(not(windows))]
             let _ = reference;
+            if experimental_render {
+                bail!("Le profil de rendu expérimental nécessite le moteur natif Windows.");
+            }
             return options.run(true);
         }
         Action::Gpu { adapter } => {
@@ -185,6 +195,33 @@ fn main() -> ExitCode {
         Err(e) => {
             eprintln!("kelvaroq: {e:#}");
             ExitCode::FAILURE
+        }
+    }
+}
+
+#[cfg(test)]
+mod argument_tests {
+    use super::*;
+
+    #[test]
+    fn experimental_profile_is_opt_in_and_native_only() {
+        for (flags, enabled) in [(vec![], false), (vec!["--experimental-render"], true)] {
+            let args = Args::try_parse_from(
+                ["kelvaroq", "play"]
+                    .into_iter()
+                    .chain(flags)
+                    .chain(["--", "jeu"]),
+            )
+            .expect("profil de lancement");
+            assert!(
+                matches!(args.command, Action::Play { experimental_render, .. } if experimental_render == enabled)
+            );
+        }
+        for other in ["--reference", "--host-topology"] {
+            assert!(
+                Args::try_parse_from(["kelvaroq", "play", "--experimental-render", other, "jeu"])
+                    .is_err()
+            );
         }
     }
 }

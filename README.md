@@ -12,6 +12,8 @@ Projet privé de compatibilité Xbox Series X|S pour Windows x64, écrit en Rust
 2. Ouvrir **Kelvaroq.exe**. Choisir le dossier du jeu ou son exécutable. Le glisser-déposer de l’un ou l’autre sur Kelvaroq.exe fonctionne aussi.
 3. Le jeu ouvre sa fenêtre de rendu et une console **Kelvaroq | Journal du jeu**. Le lanceur utilise le moteur natif fourni dans le ZIP.
 
+Pour essayer les optimisations de mémoire et de commandes, lancer `Kelvaroq.exe --experimental-render`, puis sélectionner le jeu. Le même profil s’applique avec `kelvaroq play --experimental-render <dossier>`. Il réserve au maximum 256 Mio aux transferts en VRAM et 128 Mio aux petites ressources en lecture seule. Les réglages `VICTORY_*` définis par l’utilisateur ont priorité. [Détail des réglages](documentation.md#placement-mémoire-et-soumission)
+
 Le moteur natif réutilise le chargeur, le son et les entrées de VIctory. Le crate Rust de Kelvaroq intervient dans la préparation des textures et la mesure de la cadence. Le paquet inclut également le moteur de référence et son interpréteur. Le dossier peut être déplacé en conservant ses fichiers ensemble. Pour traiter un dossier, le lanceur utilise l’exécutable Series déclaré dans `MicrosoftGame.config`. En l’absence de manifeste, il accepte le seul `.exe` du dossier. En cas de choix ambigu, sélectionner le fichier directement.
 
 La présentation native du profil Series X utilise une surface de 3840 × 2160. La fenêtre est ajustée aux dimensions du bureau. Les passes intermédiaires du jeu peuvent utiliser d’autres résolutions.
