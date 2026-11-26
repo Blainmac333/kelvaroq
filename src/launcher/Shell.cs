@@ -34,6 +34,13 @@ internal sealed class Shell : Window {
     TextBlock status;
     ProgressBar progress;
 
+    readonly ReleaseCheck updates;
+    bool checking, showCheckResult;
+    StackPanel updateNotice;
+    Button checkUpdates;
+    TextBlock checkResult;
+    bool UpdatesEnabled { get { return Product.Enabled("VICTORY_LAUNCHER_UPDATES") && prefs.updates; } }
+
     internal int ExitStatus;
     readonly List<Button> navigation = new List<Button>();
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
@@ -41,6 +48,8 @@ internal sealed class Shell : Window {
     internal Shell(string folder, Preferences preferences, bool preview, bool exp) {
         home = folder; history = Path.Combine(home,"snapshots"); prefs = preferences;
         demo = preview; experimental = exp; build = Product.Build(); locale = new Locale(prefs.language);
+        updates = !demo && Product.Enabled("VICTORY_LAUNCHER_UPDATES") ? ReleaseCheck.Load(home) : new ReleaseCheck();
+        if (!demo) Loaded += delegate { CheckForUpdates(false); };
         var assembly = Assembly.GetExecutingAssembly();
         using (var stream = assembly.GetManifestResourceStream("controls.xaml"))
             Resources.MergedDictionaries.Add((ResourceDictionary)XamlReader.Load(stream));
@@ -155,12 +164,15 @@ internal sealed class Shell : Window {
         }
         var main = new DockPanel { Margin = new Thickness(30,24,30,16) }; Grid.SetColumn(main,1); root.Children.Add(main);
         var title = Text(T(page),30,Ink,true); title.Margin = new Thickness(0,0,0,18); DockPanel.SetDock(title,Dock.Top); main.Children.Add(title);
+        checkUpdates = null; checkResult = null;
+        updateNotice = new StackPanel(); DockPanel.SetDock(updateNotice,Dock.Top); main.Children.Add(updateNotice);
         var feedback = new StackPanel(); DockPanel.SetDock(feedback,Dock.Bottom); main.Children.Add(feedback);
         status = Text("",13,Muted); feedback.Children.Add(status);
         progress = new ProgressBar { Height = 4, Visibility = Visibility.Collapsed, Foreground = Accent }; feedback.Children.Add(progress);
         body = new StackPanel { Margin = new Thickness(0,0,6,0) };
         main.Children.Add(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
         switch (page) { case "workspace": Workspace(); break; case "settings": Settings(); break; case "saves": Saves(); break; case "about": About(); break; }
+        UpdateFeedback();
     }
     StackPanel Card(string title) {
         if (title != null) { var header = Text(T(title),17,Ink,true); header.Margin = new Thickness(0,10,0,8); body.Children.Add(header); }
@@ -243,6 +255,7 @@ internal sealed class Shell : Window {
             check.Click += delegate { Guard(delegate { if (monitor) prefs.monitor = check.IsChecked == true; else prefs.preload = check.IsChecked == true; Persist(); }); };
             options.Children.Add(check);
         }
+        if (Product.Enabled("VICTORY_LAUNCHER_UPDATES")) UpdateControls(true);
         if (demo || Product.Enabled("VICTORY_LAUNCHER_I18N")) LanguageSettings();
         if (demo || Product.Enabled("VICTORY_SAVE_HISTORY")) { var retention = Card("retention"); Count(retention,true); Count(retention,false); }
     }
@@ -349,10 +362,60 @@ internal sealed class Shell : Window {
     void About() {
         var info = Card("installation");
         Row(info,T("productVersion"),Product.Version); Row(info,T("engineBuild"),BuildText(demo ? "f85101b6095e" : BuildId));
-        Row(info,T("patch"),demo ? "0069" : build.patches == null || build.patches.Length == 0 ? T("unknown") : build.patches.Last().name.Split('-')[0]);
+        Row(info,T("patch"),demo ? "0064" : build.patches == null || build.patches.Length == 0 ? T("unknown") : build.patches.Last().name.Split('-')[0]);
         Row(info,T("licence"),"GPL-3.0-or-later");
-        var credits = Card("credits"); Row(credits,T("publisher"),"Stellarr Studio SAS"); Row(credits,"VIctory","victory-fork");
+        var credits = Card("credits");
         Row(credits,"Moon AI","https://realmoon.ai");
+        Row(credits,T("publisher"),"Stellarr Studio SAS");
+        Row(credits,"VIctory","GPL-3.0-or-later");
+        Row(credits,"victory-fork","GPL-3.0-or-later");
+        if (Product.Enabled("VICTORY_LAUNCHER_UPDATES")) UpdateControls(false);
+    }
+    void UpdateControls(bool settings) {
+        var card = Card("updates");
+        if (settings) {
+            var toggle = new CheckBox { Content = T("autoUpdates"), Foreground = Ink, IsChecked = prefs.updates, Margin = new Thickness(0,5,0,5) };
+            toggle.Click += delegate { Guard(delegate {
+                prefs.updates = toggle.IsChecked == true;
+                Persist(); showCheckResult = false;
+                if (prefs.updates) CheckForUpdates(false);
+                UpdateFeedback();
+            }); };
+            card.Children.Add(toggle);
+        }
+        checkUpdates = Button(T("checkUpdates"),delegate { CheckForUpdates(true); });
+        Actions(card).Children.Add(checkUpdates);
+        checkResult = Text("",13,Muted); card.Children.Add(checkResult);
+    }
+    async void CheckForUpdates(bool manual) {
+        if (!UpdatesEnabled || checking) return;
+        showCheckResult = manual;
+        try {
+            if (!updates.Begin(UpdatesEnabled,DateTime.UtcNow,delegate { if (!demo) updates.Write(home); })) return;
+            checking = true; UpdateFeedback();
+            var latest = demo ? new Release { tag_name = "v0.3.0", body = T("sampleNotes") } : await Task.Run(() => ReleaseCheck.Fetch());
+            if (latest != null) { updates.latest = latest; updates.succeeded = true; }
+            if (!demo) updates.Write(home);
+        } catch (Exception) {
+            // An unavailable service or unwritable cache should never interrupt a launch.
+        } finally { checking = false; UpdateFeedback(); }
+    }
+    void UpdateFeedback() {
+        updateNotice.Children.Clear();
+        var release = updates.latest;
+        if (UpdatesEnabled && release != null && release.NewerThan(Product.Version)) {
+            var notice = new StackPanel { Margin = new Thickness(0,0,0,12) };
+            Row(notice,T("newRelease",release.tag_name),release.body,Button(T("openRelease"),delegate {
+                if (!demo) Process.Start(new ProcessStartInfo(release.Page) { UseShellExecute = true });
+            }));
+            updateNotice.Children.Add(notice);
+        }
+        if (checkUpdates == null) return;
+        checkUpdates.IsEnabled = UpdatesEnabled && !checking;
+        string message = !UpdatesEnabled ? "" : checking ? T("checking") : !showCheckResult ? "" :
+            !updates.succeeded ? T("updateOffline") : release != null && release.NewerThan(Product.Version) ? "" : T("upToDate");
+        checkResult.Text = message;
+        checkResult.Visibility = message.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
     }
     List<Snapshot> Samples() {
         return Enumerable.Range(0,3).Select(n => new Snapshot { Info = new Manifest { created_at = new DateTime(2026,11,24,16-n,30,0,DateTimeKind.Utc).ToString("o"),
@@ -363,10 +426,11 @@ internal sealed class Shell : Window {
         foreach (var lang in new[]{"en","fr"}) foreach (var night in new[]{false,true}) {
             locale = new Locale(lang); prefs.language = lang; dark = night;
             string dest = Path.Combine(directory,lang,night ? "dark" : "light"); Directory.CreateDirectory(dest);
-            foreach (var p in new[]{"workspace","saves","settings","about"}) {
-                page = p; Draw();
+            foreach (var p in new[]{"workspace","saves","settings","about","update"}) {
+                updates.latest = p == "update" ? new Release { tag_name = "v0.3.0", body = T("sampleNotes") } : null;
+                page = p == "update" ? "workspace" : p; Draw();
                 // Capture full content, including settings below the fold on small displays.
-                var size = new Size(1000,p == "settings" ? 780 : 690);
+                var size = new Size(1000,p == "settings" ? 1020 : p == "about" ? 850 : 690);
                 root.Measure(size); root.Arrange(new Rect(size)); root.UpdateLayout();
                 var bmp = new RenderTargetBitmap((int)size.Width,(int)size.Height,96,96,PixelFormats.Pbgra32);
                 bmp.Render(root); var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(bmp));

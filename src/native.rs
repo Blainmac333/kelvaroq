@@ -24,6 +24,14 @@ const EXPERIMENTAL_RENDER: &[(&str, &str)] = &[
     ("VICTORY_SCOPED_CARD_BARRIERS", "1"),
 ];
 
+/// Approach after XCL b49be18: resolve the host executable relative to the launcher.
+pub(crate) fn find_engine(folder: &Path) -> Option<std::path::PathBuf> {
+    ["kelvaroq-engine.exe", "victory.exe"]
+        .iter()
+        .map(|name| folder.join(name))
+        .find(|path| path.is_file())
+}
+
 pub(crate) fn run(
     engine: &Path,
     image: &Path,
@@ -106,4 +114,26 @@ pub(crate) fn run(
         bail!("Le moteur natif s’est arrêté ({status}).");
     }
     Ok(ExitCode::SUCCESS)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finds_the_packaged_engine_and_older_installations() -> Result<()> {
+        let folder = std::env::temp_dir().join(format!("kelvaroq-engine-test-{}", std::process::id()));
+        std::fs::create_dir(&folder)?;
+        let legacy = folder.join("victory.exe");
+        let current = folder.join("kelvaroq-engine.exe");
+        assert_eq!(find_engine(&folder), None);
+        std::fs::write(&legacy, [])?;
+        assert_eq!(find_engine(&folder), Some(legacy.clone()));
+        std::fs::write(&current, [])?;
+        assert_eq!(find_engine(&folder), Some(current.clone()));
+        std::fs::remove_file(legacy)?;
+        std::fs::remove_file(current)?;
+        std::fs::remove_dir(folder)?;
+        Ok(())
+    }
 }

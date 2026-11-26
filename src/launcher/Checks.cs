@@ -20,6 +20,36 @@ internal static class Checks {
         var p = new Preferences { data = Path.Combine(root,"data"), cache = Path.Combine(root,"cache") };
         Directory.CreateDirectory(home);
         switch (suite) {
+            case "releases":
+                const string fixture = "{\"tag_name\":\"v0.10.1\",\"body\":\"## Changes\\r\\n- Faster startup\",\"html_url\":\"https://example.invalid/\",\"draft\":false,\"prerelease\":false}";
+                var release = Release.Parse(fixture);
+                Check(release.body == "Changes Faster startup" && release.Page == "https://github.com/fablinoo/kelvaroq/releases/tag/v0.10.1");
+                Check(release.NewerThan("0.2.9") && !release.NewerThan("0.10.1") && !release.NewerThan("1.0.0"));
+                foreach (string tag in new[]{"0.3.0","v0.3","v0.03.0","v0.3.0-beta","v1.2.3.4","v1.2.3\n","v0.2.0/other"})
+                    Check(Release.Number(tag) == null);
+                Reject(() => Release.Parse("{}")); Reject(() => Release.Parse("{"));
+                Reject(() => Release.Parse(fixture.Replace("\"draft\":false","\"draft\":true")));
+                Reject(() => Release.Parse(fixture.Replace("\"prerelease\":false","\"prerelease\":true")));
+                Check(Release.Parse("{\"tag_name\":\"v1.0.0\",\"body\":null}").body == "");
+                break;
+            case "updatePolicy":
+                var clock = new DateTime(2026,1,1,12,0,0,DateTimeKind.Utc);
+                var check = ReleaseCheck.Load(home);
+                Check(p.updates);
+                p.updates = false; p.Write(home);
+                Check(!check.Begin(Preferences.Load(home).updates,clock,() => { throw new Exception(); }) && check.attempted == 0);
+                Check(check.Begin(true,clock,() => check.Write(home)));
+                check = ReleaseCheck.Load(home);
+                Check(!check.Begin(true,clock.AddDays(1).AddTicks(-1),() => { throw new Exception(); }));
+                Check(check.Begin(true,clock.AddDays(1),() => check.Write(home)));
+                check.latest = Release.Parse("{\"tag_name\":\"v0.3.1\",\"body\":\"Summary\"}"); check.succeeded = true; check.Write(home);
+                Check(ReleaseCheck.Load(home).latest.NewerThan("0.2.0"));
+                break;
+            case "engine":
+                var legacy = Path.Combine(root,"victory.exe"); var branded = Path.Combine(root,"kelvaroq-engine.exe");
+                File.WriteAllText(legacy,"old"); Check(Product.EngineIn(root) == legacy);
+                File.WriteAllText(branded,"new"); Check(Product.EngineIn(root) == branded);
+                break;
             case "language":
                 var english = new Locale("en").Strings;
                 foreach (string code in Locale.Codes) {
@@ -32,10 +62,10 @@ internal static class Checks {
             case "settings":
                 p.Write(home); var file = Path.Combine(home,"settings");
                 var json = Files.Json.Deserialize<Dictionary<string,object>>(File.ReadAllText(file));
-                json["schema_version"] = 1; json.Remove("days"); json.Remove("recent");
+                json["schema_version"] = 1; json.Remove("days"); json.Remove("recent"); json.Remove("updates");
                 File.WriteAllText(file,Files.Json.Serialize(json));
                 var migrated = Preferences.Load(home);
-                Check(migrated.schema_version == 2 && migrated.days == 14 && migrated.recent == 8 && migrated.data == p.data);
+                Check(migrated.schema_version == 2 && migrated.days == 14 && migrated.recent == 8 && migrated.data == p.data && migrated.updates);
                 Check(Preferences.Load(home).schema_version == 2);
                 json["schema_version"] = 17; File.WriteAllText(file,Files.Json.Serialize(json)); Reject(() => Preferences.Load(home));
                 p.cache = p.data; Reject(() => p.Write(home)); break;

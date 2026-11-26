@@ -138,13 +138,16 @@ internal sealed class Preferences {
     public string executable { get; set; }
     public string cache { get; set; }
     public string data { get; set; }
+    public bool updates { get; set; }
     public bool monitor { get; set; }
     public bool preload { get; set; }
     public int recent { get; set; }
     public int days { get; set; }
     public Preferences() {
-        schema_version = 2; language = "system"; recent = 8; days = 14; preload = true;
-        var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"victory");
+        schema_version = 2; updates = true; language = "system"; recent = 8; days = 14; preload = true;
+        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var legacy = Path.Combine(local,"victory");
+        var root = Directory.Exists(legacy) || !Product.Enabled("VICTORY_LAUNCHER_STORAGE") ? legacy : Path.Combine(local,"Kelvaroq");
         cache = Environment.GetEnvironmentVariable("VICTORY_CACHE_DIR") ?? Path.Combine(root,"cache");
         data = Environment.GetEnvironmentVariable("VICTORY_DATA_DIR") ?? Path.Combine(root,"data");
     }

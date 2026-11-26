@@ -180,5 +180,14 @@
   "shortTranslation": "Übersetzung",
   "noFrames": "Keine Bilder zum Exportieren.",
   "csvError": "CSV konnte nicht in den aktuellen Ordner geschrieben werden.",
-  "demoFeed": "Synthetische Messwerte fehlen."
+  "demoFeed": "Synthetische Messwerte fehlen.",
+  "updates": "Updates",
+  "autoUpdates": "Einmal täglich auf GitHub nach neuen Versionen suchen",
+  "checkUpdates": "Nach Updates suchen",
+  "checking": "GitHub wird abgefragt…",
+  "newRelease": "Kelvaroq {0} ist verfügbar",
+  "openRelease": "Release-Seite öffnen",
+  "updateOffline": "GitHub ist nicht erreichbar. Eine neue Prüfung ist nach 24 Stunden möglich.",
+  "upToDate": "Die installierte Version war bei der letzten Prüfung aktuell.",
+  "sampleNotes": "Beispiel für Versionshinweise in der Launcher-Demo."
 }

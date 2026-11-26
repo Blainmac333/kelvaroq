@@ -180,5 +180,14 @@
   "shortTranslation": "traduzione",
   "noFrames": "Nessun fotogramma da esportare.",
   "csvError": "Impossibile scrivere il CSV nella cartella corrente.",
-  "demoFeed": "Misure sintetiche non disponibili."
+  "demoFeed": "Misure sintetiche non disponibili.",
+  "updates": "Aggiornamenti",
+  "autoUpdates": "Cerca nuove versioni su GitHub una volta al giorno",
+  "checkUpdates": "Controlla aggiornamenti",
+  "checking": "Verifica su GitHub…",
+  "newRelease": "Kelvaroq {0} è disponibile",
+  "openRelease": "Apri la pagina della versione",
+  "updateOffline": "GitHub non è disponibile. Puoi riprovare dopo 24 ore.",
+  "upToDate": "Hai la versione più recente trovata durante il controllo.",
+  "sampleNotes": "Note di versione di esempio per la demo del launcher."
 }

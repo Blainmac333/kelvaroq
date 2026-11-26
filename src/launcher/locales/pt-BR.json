@@ -180,5 +180,14 @@
   "shortTranslation": "tradução",
   "noFrames": "Não há quadros para exportar.",
   "csvError": "Não foi possível gravar o CSV na pasta atual.",
-  "demoFeed": "Medições sintéticas indisponíveis."
+  "demoFeed": "Medições sintéticas indisponíveis.",
+  "updates": "Atualizações",
+  "autoUpdates": "Procurar novas versões no GitHub uma vez por dia",
+  "checkUpdates": "Verificar atualizações",
+  "checking": "Consultando o GitHub…",
+  "newRelease": "Kelvaroq {0} está disponível",
+  "openRelease": "Abrir página da versão",
+  "updateOffline": "O GitHub está indisponível. Você pode verificar novamente após 24 horas.",
+  "upToDate": "Você tem a versão mais recente encontrada na última verificação.",
+  "sampleNotes": "Exemplo de notas de versão para a demonstração do inicializador."
 }

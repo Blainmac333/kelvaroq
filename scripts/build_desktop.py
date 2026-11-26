@@ -12,6 +12,8 @@ def build(out, version):
     compilers = sorted(sdk.glob("10.*/x64/rc.exe"), key=lambda p: tuple(map(int, p.parents[1].name.split("."))))
     rc = shutil.which("rc.exe") or compilers[-1]
     nums = ",".join(version.split(".") + ["0"])
+    manifest = out / "app.manifest"
+    manifest.write_text((src / "app.manifest").read_text().replace("@VERSION@", version), encoding="utf-8")
     resource = (src / "launcher.rc").read_text().replace("@NUMS@", nums).replace("@VERSION@", version)
     (out / "launcher.rc").write_text(resource, encoding="ascii")
     subprocess.run([rc, "/nologo", "/fo", out / "launcher.res", out / "launcher.rc"], check=True)
@@ -27,7 +29,7 @@ def build(out, version):
     locales = [src / "locales" / (code + ".json") for code in ("en", "fr", "es", "de", "it", "pt-BR")]
     resources = locales + [src / "controls.xaml", src.parents[1] / "assets/launcher/mark.png"]
     subprocess.run([framework / "csc.exe", "/nologo", "/target:winexe", "/platform:x64", "/optimize+",
-                    "/utf8output", "/codepage:65001", "/win32manifest:" + str(src / "app.manifest"),
+                    "/utf8output", "/codepage:65001", "/win32manifest:" + str(manifest),
                     "/out:" + str(out / dest.name), *["/reference:" + str(framework / (a + ".dll")) for a in assemblies],
                     *["/resource:" + str(p) + "," + p.name for p in resources],
                     attrs, *sorted(src.glob("*.cs"))], check=True)

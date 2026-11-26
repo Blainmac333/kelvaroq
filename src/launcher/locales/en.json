@@ -180,5 +180,14 @@
   "shortTranslation": "translation",
   "noFrames": "There are no frames to export.",
   "csvError": "Could not write the CSV in the current folder.",
-  "demoFeed": "Synthetic measurements are unavailable."
+  "demoFeed": "Synthetic measurements are unavailable.",
+  "updates": "Updates",
+  "autoUpdates": "Check GitHub for new releases once a day",
+  "checkUpdates": "Check for updates",
+  "checking": "Checking GitHub…",
+  "newRelease": "Kelvaroq {0} is available",
+  "openRelease": "Open release page",
+  "updateOffline": "GitHub is unavailable. You can check again after 24 hours.",
+  "upToDate": "You have the latest release from the last check.",
+  "sampleNotes": "Sample release notes for the launcher demo."
 }

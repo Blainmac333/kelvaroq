@@ -55,6 +55,10 @@ mod launcher {
     const PICK_FILE: usize = 101;
     const PICK_FOLDER: usize = 102;
 
+    fn workspace_enabled(setting: Option<&OsStr>) -> bool {
+        setting != Some(OsStr::new("0"))
+    }
+
     pub(super) fn run() -> Result<ExitCode> {
         if let Some(result) = crate::monitor::command() {
             result?;
@@ -80,7 +84,7 @@ mod launcher {
             return Ok(ExitCode::SUCCESS);
         }
         if args.peek().is_some_and(|a| a == "--ui-demo")
-            || std::env::var_os("VICTORY_LAUNCHER_V2").is_some_and(|v| v != "0")
+            || workspace_enabled(std::env::var_os("VICTORY_LAUNCHER_V2").as_deref())
         {
             let launcher = std::env::current_exe()?;
             let args: Vec<_> = args.collect();
@@ -362,6 +366,13 @@ mod launcher {
     mod tests {
         use super::*;
 
+        #[test]
+        fn workspace_defaults_on_and_zero_selects_the_picker() {
+            assert!(workspace_enabled(None));
+            assert!(workspace_enabled(Some(OsStr::new("1"))));
+            assert!(!workspace_enabled(Some(OsStr::new("0"))));
+        }
+
         fn desktop_test(suite: &str) {
             let exe = std::path::Path::new(env!("OUT_DIR")).join("kelvaroq-desktop.exe");
             let result = Command::new(exe)
@@ -375,6 +386,18 @@ mod launcher {
             );
         }
 
+        #[test]
+        fn release_tags_and_notes() {
+            desktop_test("releases");
+        }
+        #[test]
+        fn disabled_and_daily_update_checks() {
+            desktop_test("updatePolicy");
+        }
+        #[test]
+        fn desktop_prefers_branded_engine() {
+            desktop_test("engine");
+        }
         #[test]
         fn interrupted_restore_recovers() {
             desktop_test("recovery");

@@ -32,11 +32,15 @@ internal static class Product {
     internal static bool Enabled(string key) { return Environment.GetEnvironmentVariable(key) != "0"; }
     internal sealed class Patch { public string name { get; set; } }
     internal sealed class Receipt { public string patched_tree { get; set; } public Patch[] patches { get; set; } }
+    internal static string EngineIn(string folder) {
+        string engine = Path.Combine(folder,"kelvaroq-engine.exe");
+        return File.Exists(engine) ? engine : Path.Combine(folder,"victory.exe");
+    }
     internal static Receipt Build() {
         var file = Path.Combine(Base,"native","build.json");
         if (File.Exists(file)) return Files.Json.Deserialize<Receipt>(File.ReadAllText(file));
         var receipt = new Receipt();
-        var engine = Path.Combine(Base,"native","victory.exe");
+        var engine = EngineIn(Path.Combine(Base,"native"));
         if (File.Exists(engine)) using (var bytes = File.OpenRead(engine)) receipt.patched_tree = Files.Hash(bytes);
         return receipt;
     }
@@ -45,7 +49,7 @@ internal static class Product {
         string cli = Path.Combine(Base,"kelvaroq-cli.exe");
         if (!File.Exists(cli) && Files.Names.Equals(Path.GetFileName(Environment.GetEnvironmentVariable("VICTORY_LAUNCHER_EXE")),"kelvaroq-launcher.exe"))
             cli = Path.Combine(Base,"kelvaroq.exe");
-        if (!File.Exists(cli) || !File.Exists(Path.Combine(Base,"native","victory.exe"))) throw new Problem("engineMissing");
+        if (!File.Exists(cli) || !File.Exists(EngineIn(Path.Combine(Base,"native")))) throw new Problem("engineMissing");
         var start = new ProcessStartInfo(cli,"play " + (experimental ? "--experimental-render " : "") + "-- \"" + game.Image + "\"") {
             UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true, WorkingDirectory = Base };
         Configure(start,game,p,locale,dark);

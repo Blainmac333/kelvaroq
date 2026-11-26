@@ -180,5 +180,14 @@
   "shortTranslation": "traduction",
   "noFrames": "Aucune image à enregistrer",
   "csvError": "Écriture du CSV dans le dossier courant",
-  "demoFeed": "Flux de démonstration introuvable"
+  "demoFeed": "Flux de démonstration introuvable",
+  "updates": "Mises à jour",
+  "autoUpdates": "Rechercher les nouvelles versions sur GitHub une fois par jour",
+  "checkUpdates": "Rechercher des mises à jour",
+  "checking": "Vérification sur GitHub…",
+  "newRelease": "Kelvaroq {0} est disponible",
+  "openRelease": "Ouvrir la page de la version",
+  "updateOffline": "GitHub est indisponible. Réessayez après 24 heures.",
+  "upToDate": "Vous avez la dernière version trouvée lors de la vérification.",
+  "sampleNotes": "Exemple de notes de version pour la démonstration du lanceur."
 }

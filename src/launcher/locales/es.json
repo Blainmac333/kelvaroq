@@ -180,5 +180,14 @@
   "shortTranslation": "traducción",
   "noFrames": "No hay fotogramas para exportar.",
   "csvError": "No se pudo escribir el CSV en la carpeta actual.",
-  "demoFeed": "Las mediciones sintéticas no están disponibles."
+  "demoFeed": "Las mediciones sintéticas no están disponibles.",
+  "updates": "Actualizaciones",
+  "autoUpdates": "Buscar versiones nuevas en GitHub una vez al día",
+  "checkUpdates": "Buscar actualizaciones",
+  "checking": "Consultando GitHub…",
+  "newRelease": "Kelvaroq {0} está disponible",
+  "openRelease": "Abrir la página de la versión",
+  "updateOffline": "GitHub no está disponible. Puedes volver a comprobarlo después de 24 horas.",
+  "upToDate": "Tienes la última versión encontrada en la consulta.",
+  "sampleNotes": "Notas de ejemplo para la demostración del lanzador."
 }
