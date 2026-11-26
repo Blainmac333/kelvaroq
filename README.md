@@ -24,16 +24,18 @@ Every public project we have measured on the same machine is built on that copy 
 
 We traced how the game really uses its memory, from the first instruction of the process to the open world, and found why the earlier attempts to remove the loop failed. The blocker was never the game.
 
+**Kelvaroq's memory layer is in testing now, and the first results are wild:** in the first scenes we tested, the memory copied every frame fell from over 100 MB to under 8 MB. We are tuning it for the open world before it ships.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/memory-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="assets/readme/memory-light.svg">
-  <img src="assets/readme/memory-light.svg" alt="Simplified view: the usual approach copies the game's memory to the GPU and back every frame; Kelvaroq gives the GPU the game's memory as the console does. The implementation is not published yet.">
+  <img src="assets/readme/memory-light.svg" alt="Simplified view: the usual approach copies the game's memory to the GPU and back every frame; Kelvaroq gives the GPU the game's memory as the console does. The new memory layer is in testing.">
 </picture>
 
 ## Where this is going
 
 - **Goal:** the game runs from boot to credits exactly as it does on an Xbox Series X, with what a PC adds on top: DLSS super resolution, frame generation, higher resolutions and an unlocked frame rate.
-- **Release policy:** the next public pushes will land once the memory layer is validated in game, DLSS and frame generation are integrated, the remaining visual effects are in place, and every test suite passes. Until then, this repository publishes measured results, not the implementation.
+- **Release policy:** the next public pushes will land once the memory layer is validated across the whole game, DLSS and frame generation are integrated, the remaining visual effects are in place, and every test suite passes. Until then, the public build stays on the current engine while the new layer is tested.
 
 ## Status
 
@@ -105,7 +107,7 @@ A tester played a build from this public repository and monitored it, on a Ryzen
 - [x] Ask Windows for changed pages once per reservation and submission (patch 0045): heavy-frame median 129 → 110 ms in an A/B.
 - [x] Present asynchronously, at most two frames ahead (patches 0046, 0048): the game no longer waits in present; p95 568 → 262 ms.
 - [x] Shader preloading screen in the launcher, and a live performance monitor (`Kelvaroq.exe --monitor`).
-- [ ] Remove the memory synchronisation that costs about two thirds of every heavy frame. *In progress, not public yet.*
+- [ ] Remove the memory synchronisation that costs about two thirds of every heavy frame. *In testing: copies per frame down from over 100 MB to under 8 MB in the first scenes.*
 - [ ] Run 64-lane compute shaders on 32-lane GPUs, and build ray-tracing structures (about 515 dropped draws per frame).
 - [ ] Address the remaining ~1,400 clamped indirect calls per frame across non-mesh draws and compute dispatches.
 - [ ] Address the VRAM budget and missing host pipelines.
