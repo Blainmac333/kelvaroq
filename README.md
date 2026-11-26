@@ -24,14 +24,15 @@ Kelvaroq is an Xbox Series X|S compatibility runtime for Windows x64, written in
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/highlights-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="assets/readme/highlights-light.svg">
-  <img src="assets/readme/highlights-light.svg" alt="Unified memory, in testing: 100% of the game's graphics memory shared with the GPU from allocation; 97.4% of GPU memory views fit directly in shared memory; 64 million GPU lookups served with no copy in one live session; identical output on 4,418 GPU submissions recorded from real gameplay; 21 times less memory bookkeeping per frame (6.2 s to 0.29 s on an RTX 5080); 0 GB left behind after closing the game, down from about 19 GB.">
+  <img src="assets/readme/highlights-light.svg" alt="Unified memory, in testing: 100% of the game's graphics memory shared with the GPU from allocation; 97.4% of GPU memory views fit directly in shared memory; 64 million GPU lookups served with no copy in one live session; 121 million descriptor rows checked against real gameplay with zero errors; 300 times less memory bookkeeping per heavy frame (about 18 s to about 60 ms on an RTX 5080); 0 GB left behind after closing the game, down from about 19 GB.">
 </picture>
 
 - **100%** of the game's graphics memory is shared with the GPU from the moment it is allocated.
 - **97.4%** of the GPU's memory views fit directly in that shared memory, measured on real gameplay.
 - **64 million** GPU lookups served straight from the game's memory, with no copy, in one live session. That morning: zero.
-- **Identical output** to the classic path on **4,418** GPU submissions recorded from real gameplay.
-- **21× less** memory bookkeeping per heavy frame: **6.2 s → 0.29 s** on an RTX 5080.
+- **Translate once, like the console:** each GPU descriptor is now translated once, when the game writes it, instead of being re-sorted on every submission. Per-submission work dropped **under 1 ms**.
+- **121 million** descriptor rows checked against recorded real gameplay, with **zero errors**.
+- **300× less** memory bookkeeping per heavy frame on real gameplay: **~18 s → ~60 ms** on an RTX 5080.
 - **0 GB** left behind when the game closes, down from about 19 GB per session, with a clean shutdown in about one second.
 
 The unified memory layer is **in testing** and goes public as soon as the build is stable and clean. Follow it live on [Discord](https://discord.gg/5Hvk5RFB3D).
@@ -48,7 +49,7 @@ We traced how the game really uses its memory, from the first instruction of the
 
 **Kelvaroq's memory layer is in testing now, and the first results are wild:** in the first scenes we tested, the memory copied every frame fell from over 100 MB to under 8 MB. We are tuning it for the open world before it ships.
 
-**Update, 26 November 2026: the memory layer now runs in the open world.** In a live test session, the GPU found more than half of the memory it needed, about 64 million of 115 million lookups, directly in the game's own memory instead of a copy; earlier the same day, it found none. What is left is speed: on recorded game data, the work this takes per frame has fallen from about 6 seconds to between 0.17 and 0.35 seconds, and the target is **5 ms per frame**. It is in testing now and goes public as soon as the build is stable and clean. Follow it live on [Discord](https://discord.gg/5Hvk5RFB3D).
+**Update, 26 November 2026: the memory layer now runs in the open world.** In a live test session, the GPU found more than half of the memory it needed, about 64 million of 115 million lookups, directly in the game's own memory instead of a copy; earlier the same day, it found none. What is left is speed: on recorded game data, translating each descriptor once, when the game writes it, brought the work per heavy frame from about 18 seconds down to about 60 ms, and the target is **5 ms per frame**. It is in testing now and goes public as soon as the build is stable and clean. Follow it live on [Discord](https://discord.gg/5Hvk5RFB3D).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/memory-dark.svg">
