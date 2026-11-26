@@ -8,6 +8,68 @@ using System.Text;
 namespace Kelvaroq {
 internal static class Checks {
     static void Check(bool ok) { if (!ok) throw new InvalidOperationException("Assertion failed"); }
+    static void HardwareProfiles(string home,Preferences prefs) {
+        var locale = new Locale("en");
+        var machine = Hardware.Sample();
+        var gpu = machine.Preferred;
+        Func<int?[]> values = () => ProfileRule.Rules.Select(r => r.Value(machine,prefs)).ToArray();
+        Check(!prefs.customProfile && gpu.VendorName == "NVIDIA" && !machine.Warnings(locale).Any());
+        Check(values().SequenceEqual(new int?[]{192,1024,96,8,0}));
+
+        gpu.name = "GeForce RTX 3060"; gpu.vram = 12L << 30;
+        machine.physical = 8; machine.logical = 16; machine.ram = (16L << 30) - (128L << 20);
+        Check(!machine.Warnings(locale).Any() && values().SequenceEqual(new int?[]{128,512,64,4,0}));
+
+        gpu.name = "Radeon RX 7900 XTX"; gpu.vendor = 0x1002; gpu.vram = 24L << 30;
+        gpu.wave_min = 32; gpu.wave_max = 64; machine.ram = 32L << 30;
+        prefs.customProfile = true; prefs.profileValues["VICTORY_WAVE64_PAIRED"] = 1;
+        Check(gpu.VendorName == "AMD" && values().SequenceEqual(new int?[]{192,1024,96,4,null}));
+
+        gpu.name = "Arc A770"; gpu.vendor = 0x8086; gpu.vram = 16L << 30;
+        gpu.wave_min = 8; gpu.wave_max = 32;
+        Check(gpu.VendorName == "Intel" && values().SequenceEqual(new int?[]{192,1024,96,4,1}));
+        prefs.profileValues["VICTORY_WIDE_THREADS"] = 2;
+        prefs.profileValues["VICTORY_TEXTURE_STAGE_MB"] = -4;
+        prefs.profileValues["VICTORY_UNRECOGNIZED_TEST_KEY"] = 1;
+        prefs.Write(home); prefs = Preferences.Load(home);
+        var child = new System.Diagnostics.ProcessStartInfo();
+        child.EnvironmentVariables.Clear();
+        child.EnvironmentVariables["VICTORY_CARD_BUFFERS_MB"] = "700";
+        Product.Configure(child,new Installation { Root = home },prefs,locale,false,machine);
+        Check(child.EnvironmentVariables["VICTORY_CARD_BUFFERS_MB"] == "700");
+        Check(child.EnvironmentVariables["VICTORY_TEXTURE_STAGE_MB"] == "192");
+        Check(child.EnvironmentVariables["VICTORY_WAVE64_PAIRED"] == "1");
+        Check(child.EnvironmentVariables["VICTORY_WIDE_THREADS"] == "2");
+        Check(!child.EnvironmentVariables.ContainsKey("VICTORY_UNRECOGNIZED_TEST_KEY"));
+        prefs.customProfile = false;
+        Check(values()[3] == 4 && values()[4] == 0);
+        var integrated = new Gpu { name = "Integrated GPU", fl12 = true, uma = true,
+            sm66 = true, mesh = false, bindless = true, root11 = true };
+        machine.gpus = new[]{integrated}; machine.ram = 8L << 30;
+        Check(machine.Warnings(locale).Contains(locale.T("missingHardware",locale.T("meshShaders"))));
+        Check(machine.Warnings(locale).Contains(locale.T("lowRam")) && values().All(v => v == null));
+        machine.gpus = new[]{integrated,gpu};
+        Check(machine.Preferred == gpu && machine.Warnings(locale).Contains(locale.T("hybridGpu")));
+        Check(values().SequenceEqual(new int?[]{64,256,32,4,0}));
+        machine.gpus = new[]{gpu}; gpu.vram = 6L << 30;
+        Check(values().SequenceEqual(new int?[]{64,256,32,4,0}));
+        gpu.sm66 = null;
+        Check(machine.Warnings(locale).Contains(locale.T("unverifiedHardware","Shader Model 6.6")));
+        gpu.sm66 = true;
+        var old = Environment.GetEnvironmentVariable("VICTORY_LAUNCHER_PROFILES");
+        var oldDetection = Environment.GetEnvironmentVariable("VICTORY_LAUNCHER_HARDWARE");
+        try {
+            foreach (var key in new[]{"VICTORY_LAUNCHER_PROFILES","VICTORY_LAUNCHER_HARDWARE"}) {
+                Environment.SetEnvironmentVariable(key,"0");
+                child.EnvironmentVariables.Clear(); ProfileRule.Apply(child,machine,prefs);
+                Check(child.EnvironmentVariables.Count == 0);
+                Environment.SetEnvironmentVariable(key,null);
+            }
+        } finally {
+            Environment.SetEnvironmentVariable("VICTORY_LAUNCHER_PROFILES",old);
+            Environment.SetEnvironmentVariable("VICTORY_LAUNCHER_HARDWARE",oldDetection);
+        }
+    }
     static void Reject(Action action) {
         try { action(); } catch (Exception ex) {
             if (ex is Problem || ex is InvalidDataException || ex is IOException || ex is ArgumentException) return;
@@ -20,6 +82,9 @@ internal static class Checks {
         var p = new Preferences { data = Path.Combine(root,"data"), cache = Path.Combine(root,"cache") };
         Directory.CreateDirectory(home);
         switch (suite) {
+            case "hardware":
+                HardwareProfiles(home,p);
+                break;
             case "releases":
                 const string fixture = "{\"tag_name\":\"v0.10.1\",\"body\":\"## Changes\\r\\n- Faster startup\",\"html_url\":\"https://example.invalid/\",\"draft\":false,\"prerelease\":false}";
                 var release = Release.Parse(fixture);
@@ -55,7 +120,7 @@ internal static class Checks {
                 foreach (string code in Locale.Codes) {
                     var table = new Locale(code).Strings;
                     Check(table.Count == english.Count && english.Keys.All(k => table.ContainsKey(k) && !String.IsNullOrWhiteSpace(table[k])));
-                    foreach (var key in english.Keys) foreach (var placeholder in new[]{"{0}","{1}"})
+                    foreach (var key in english.Keys) foreach (var placeholder in new[]{"{0}","{1}","{2}"})
                         Check(english[key].Contains(placeholder) == table[key].Contains(placeholder));
                 }
                 Check(new Locale("fr-CA").Code == "fr"); Check(new Locale("pt-PT").Code == "pt-BR"); break;

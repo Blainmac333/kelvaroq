@@ -26,6 +26,7 @@ internal sealed class Shell : Window {
     readonly Product.Receipt build;
     readonly BitmapImage mark = new BitmapImage();
     Preferences prefs;
+    Hardware hardware;
     Locale locale;
     string page = "workspace";
     bool dark, working;
@@ -48,6 +49,7 @@ internal sealed class Shell : Window {
     internal Shell(string folder, Preferences preferences, bool preview, bool exp) {
         home = folder; history = Path.Combine(home,"snapshots"); prefs = preferences;
         demo = preview; experimental = exp; build = Product.Build(); locale = new Locale(prefs.language);
+        if (Hardware.Enabled) hardware = demo ? Hardware.Sample() : Hardware.Detect();
         updates = !demo && Product.Enabled("VICTORY_LAUNCHER_UPDATES") ? ReleaseCheck.Load(home) : new ReleaseCheck();
         if (!demo) Loaded += delegate { CheckForUpdates(false); };
         var assembly = Assembly.GetExecutingAssembly();
@@ -216,6 +218,25 @@ internal sealed class Shell : Window {
         var options = Card("options");
         Row(options,T("monitor"),null,Text(T(prefs.monitor && Product.Enabled("VICTORY_LAUNCHER_MONITOR") ? "on" : "off"),14,Muted));
         Row(options,T("preload"),null,Text(T(prefs.preload && Product.PreloadAllowed ? "on" : "off"),14,Muted));
+        if (hardware != null) Detected();
+    }
+
+    string Known(string value) { return String.IsNullOrWhiteSpace(value) ? T("unknown") : value; }
+    string Capability(bool? value) { return T(!value.HasValue ? "unknown" : value.Value ? "featureYes" : "featureNo"); }
+    void Detected() {
+        var card = Card("detected");
+        var gpu = hardware.Preferred;
+        string vram = gpu == null ? T("unknown") : Size(gpu.vram);
+        string ram = hardware.ram.HasValue ? Size(hardware.ram.Value) : T("unknown");
+        string summary = String.Join("  ·  ",new[]{Known(gpu == null ? null : gpu.name),T("videoMemory",vram),
+            Known(hardware.Cpu),T("systemMemory",ram)});
+        var details = new List<string>();
+        if (gpu != null) details.Add(gpu.VendorName + " " + T("driver",Known(gpu.driver)));
+        if (hardware.physical > 0) details.Add(T("cores",hardware.physical,hardware.logical));
+        details.Add(T("windowsBuild",Known(hardware.Build)));
+        Row(card,summary,String.Join("  ·  ",details));
+        foreach (string warning in hardware.Warnings(locale))
+            card.Children.Add(Text(warning,14,B("#894419","#ffcd93"),true));
     }
     async void Work(Func<Task> action,string message) {
         if (working) return;
@@ -228,7 +249,7 @@ internal sealed class Shell : Window {
     void Launch() {
         if (demo || working) return;
         var game = Installation.Select(prefs.executable); Files.Separate(game.Root,prefs.ActiveData); Files.Separate(game.Root,prefs.ActiveCache);
-        var command = Product.Command(game,prefs,locale,experimental,dark);
+        var command = Product.Command(game,prefs,locale,experimental,dark,hardware);
         Work(() => Task.Run(delegate {
             bool snapshots = Product.Enabled("VICTORY_SAVE_HISTORY") && Product.Enabled("VICTORY_SAVE_SNAPSHOTS");
             string error = "";
@@ -246,6 +267,7 @@ internal sealed class Shell : Window {
         return (n / divisor).ToString("0.#",locale.Culture) + " " + T(unit == "B" ? "bytes" : unit.ToLowerInvariant());
     }
     void Settings() {
+        if (hardware != null && ProfileRule.Enabled) ProfileSettings();
         if (demo || Product.Enabled("VICTORY_LAUNCHER_STORAGE")) { var storage = Card("storage"); StorageRow(storage,true); StorageRow(storage,false); }
         var options = Card("options");
         foreach (var key in new[]{"monitor","preload"}) {
@@ -258,6 +280,37 @@ internal sealed class Shell : Window {
         if (Product.Enabled("VICTORY_LAUNCHER_UPDATES")) UpdateControls(true);
         if (demo || Product.Enabled("VICTORY_LAUNCHER_I18N")) LanguageSettings();
         if (demo || Product.Enabled("VICTORY_SAVE_HISTORY")) { var retention = Card("retention"); Count(retention,true); Count(retention,false); }
+    }
+    void ProfileSettings() {
+        var card = Card("hardwareProfile");
+        var mode = new ComboBox { Width = 145, ItemsSource = new[]{T("automatic"),T("custom")},
+            SelectedIndex = prefs.customProfile ? 1 : 0 };
+        AutomationProperties.SetName(mode,T("hardwareProfile"));
+        Row(card,T("profileMode"),null,mode);
+        mode.SelectionChanged += delegate { Guard(delegate {
+            prefs.customProfile = mode.SelectedIndex == 1; Persist(); Draw();
+        }); };
+        var gpu = hardware.Preferred;
+        if (gpu != null) card.Children.Add(Text(T("capabilities",Capability(gpu.barriers),Capability(gpu.upload_heap),
+            gpu.wave_min == 0 ? T("unknown") : gpu.wave_min == gpu.wave_max ? gpu.wave_max.ToString() :
+            gpu.wave_min + "–" + gpu.wave_max),13,Muted));
+        if (gpu == null || !gpu.Compatible) card.Children.Add(Text(T("defaultsUsed"),14,Muted));
+        foreach (var rule in ProfileRule.Rules) {
+            var value = rule.Value(hardware,prefs);
+            string inherited = Environment.GetEnvironmentVariable(rule.Key);
+            if (!value.HasValue && inherited == null) continue;
+            string label = T(rule.Label);
+            if (inherited != null)
+                Row(card,label,rule.Key,Text(T("environmentValue",inherited),14,Ink));
+            else if (prefs.customProfile) {
+                var combo = new ComboBox { Width = 86, ItemsSource = rule.Choices, SelectedItem = value.Value };
+                AutomationProperties.SetName(combo,label); Row(card,label,rule.Key,combo);
+                combo.SelectionChanged += delegate { Guard(delegate {
+                    if (prefs.profileValues == null) prefs.profileValues = new Dictionary<string,int>();
+                    prefs.profileValues[rule.Key] = (int)combo.SelectedItem; Persist();
+                }); };
+            } else Row(card,label,rule.Key,Text(value.Value.ToString(locale.Culture),14,Ink,true));
+        }
     }
     void LanguageSettings() {
         var lang = Card("language"); var combo = new ComboBox { MinWidth = 220, Margin = new Thickness(0,4,0,4), HorizontalAlignment = HorizontalAlignment.Left };
@@ -426,11 +479,26 @@ internal sealed class Shell : Window {
         foreach (var lang in new[]{"en","fr"}) foreach (var night in new[]{false,true}) {
             locale = new Locale(lang); prefs.language = lang; dark = night;
             string dest = Path.Combine(directory,lang,night ? "dark" : "light"); Directory.CreateDirectory(dest);
-            foreach (var p in new[]{"workspace","saves","settings","about","update"}) {
+            var screens = new List<string> {"workspace","saves","settings","about","update"};
+            if (hardware != null) screens.Add("unsupported");
+            if (hardware != null && ProfileRule.Enabled) screens.Add("custom");
+            foreach (var p in screens) {
+                if (hardware != null) {
+                    hardware = Hardware.Sample();
+                    if (p == "unsupported") {
+                        hardware.gpus[0].name = "Intel UHD Graphics"; hardware.gpus[0].vendor = 0x8086;
+                        hardware.gpus[0].vram = 128L << 20; hardware.gpus[0].mesh = false;
+                        hardware.gpus[0].uma = true; hardware.gpus[0].driver = null;
+                        hardware.Cpu = "Intel Core i5"; hardware.physical = 4; hardware.logical = 8;
+                        hardware.ram = 8L << 30;
+                    }
+                    prefs.customProfile = p == "custom";
+                }
                 updates.latest = p == "update" ? new Release { tag_name = "v0.3.0", body = T("sampleNotes") } : null;
-                page = p == "update" ? "workspace" : p; Draw();
+                page = p == "update" || p == "unsupported" ? "workspace" : p == "custom" ? "settings" : p;
+                Draw();
                 // Capture full content, including settings below the fold on small displays.
-                var size = new Size(1000,p == "settings" ? 1020 : p == "about" ? 850 : 690);
+                var size = new Size(1000,page == "settings" ? (ProfileRule.Enabled ? 1480 : 1020) : p == "about" ? 850 : 690);
                 root.Measure(size); root.Arrange(new Rect(size)); root.UpdateLayout();
                 var bmp = new RenderTargetBitmap((int)size.Width,(int)size.Height,96,96,PixelFormats.Pbgra32);
                 bmp.Render(root); var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(bmp));

@@ -14,6 +14,8 @@ This first public launcher release opens directly to the Kelvaroq workspace. Ext
 
 Set `VICTORY_LAUNCHER_V2=0` to use the original picker. The packaged engine is `native/kelvaroq-engine.exe`.
 
+The workspace now shows the detected GPU, dedicated video memory, CPU and system memory. It reports missing graphics features before launch. Settings opens in Automatic mode and shows the memory budgets and worker count selected for this PC. Custom mode saves overrides for the next launch. An inherited environment value takes precedence in either mode.
+
 ## Measured performance
 
 In a 300-second warm-cache run on an RTX 5080, heavy frames had a median of **108.5 ms**, a 95th percentile of **261.5 ms**, and a mean of **132.2 ms** (7.6 fps). GPU busy time was about 30%. An external 36-minute session at 2560 × 1440 on a Ryzen 9 7950X, RTX 4090 and 32 GB RAM averaged 10 fps overall and 10.9 fps after loading. These measurements cover different workloads. The 30 fps target corresponds to 33.3 ms per frame. [Measurement details](https://github.com/fablinoo/kelvaroq/blob/v0.2.0/README.md)

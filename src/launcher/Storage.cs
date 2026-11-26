@@ -141,10 +141,13 @@ internal sealed class Preferences {
     public bool updates { get; set; }
     public bool monitor { get; set; }
     public bool preload { get; set; }
+    public bool customProfile { get; set; }
+    public Dictionary<string,int> profileValues { get; set; }
     public int recent { get; set; }
     public int days { get; set; }
     public Preferences() {
         schema_version = 2; updates = true; language = "system"; recent = 8; days = 14; preload = true;
+        profileValues = new Dictionary<string,int>();
         var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var legacy = Path.Combine(local,"victory");
         var root = Directory.Exists(legacy) || !Product.Enabled("VICTORY_LAUNCHER_STORAGE") ? legacy : Path.Combine(local,"Kelvaroq");

@@ -153,6 +153,24 @@ These switches default to enabled in the desktop workspace.
 
 The monitor starts disabled and attaches to the launched engine's process ID when selected. `VICTORY_LAUNCHER_MONITOR=0` suppresses it. Shader preload starts enabled and honours the existing `VICTORY_PIPELINE_PRECOMPILE=0` override. The desktop form uses the .NET Framework 4.8 WPF assemblies supplied by Windows. The package ships the desktop companion alongside the Rust entry point.
 
+### Hardware profiles
+
+The workspace shows the high-performance hardware adapter, its driver and dedicated VRAM, the CPU and its physical and logical core counts, RAM, and the Windows build. It checks feature level 12.0, Shader Model 6.6, mesh shaders, resource binding tier 3 and root signature 1.1. The engine builds directly indexed descriptor heaps. Settings also reports wave widths, enhanced barriers and GPU upload heap support. On discrete GPUs the upload heap query reports whether the engine can use CPU-visible VRAM. A separate advisory appears below 16 GiB of system memory because loading reached 15.5 GB in the measured session above.
+
+Automatic uses the following limits for the preferred compatible discrete GPU. The memory classes use total physical memory reported by Windows, rounded to the nearest GiB. Texture residency continues to follow the current DXGI budget, and the engine already trims idle pipeline library pages according to available RAM.
+
+| Engine setting | Smaller configurations | At least 10 GiB VRAM and 16 GiB RAM | At least 16 GiB VRAM and 32 GiB RAM |
+|---|---:|---:|---:|
+| `VICTORY_TEXTURE_STAGE_MB` per frame | 64 | 128 | 192 |
+| `VICTORY_CARD_BUFFERS_MB` | 256 | 512 | 1024 |
+| `VICTORY_QUEUE2_LANDING_MB` | 32 | 64 | 96 |
+
+`VICTORY_WIDE_THREADS` uses half the physical core count, with a minimum of one worker and a maximum of twelve. Custom mode offers `VICTORY_WAVE64_PAIRED` on adapters that support 32 lanes and report a maximum of 32. It defaults to zero pending physical GPU validation. The launcher leaves inherited environment values in control and displays them in Settings.
+
+On multi-GPU PCs the launcher profiles the preferred discrete device. Windows selects the adapter for each executable. Select **High performance** for `kelvaroq-engine.exe` in Windows Graphics settings to use that device. The engine checks the active adapter's wave width again before pairing. An unsupported or unverified graphics requirement leaves the engine settings at their inherited values.
+
+Set `VICTORY_LAUNCHER_PROFILES=0` for detection alone. Set `VICTORY_LAUNCHER_HARDWARE=0` to restore the previous workspace and launch environment.
+
 ## Build from source
 
 On Windows, use stable Rust with the x64 MSVC target, Visual Studio Build Tools with the Windows SDK, and 64-bit Python 3.11 or later. Run these commands in PowerShell from the repository root.

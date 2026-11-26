@@ -387,6 +387,10 @@ mod launcher {
         }
 
         #[test]
+        fn hardware_profiles_and_overrides() {
+            desktop_test("hardware");
+        }
+        #[test]
         fn release_tags_and_notes() {
             desktop_test("releases");
         }

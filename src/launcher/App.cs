@@ -45,17 +45,18 @@ internal static class Product {
         return receipt;
     }
     internal static bool PreloadAllowed { get { return Enabled("VICTORY_PIPELINE_PRECOMPILE") && Enabled("VICTORY_PIPELINE_WARMUP"); } }
-    internal static ProcessStartInfo Command(Installation game, Preferences p, Locale locale, bool experimental, bool dark) {
+    internal static ProcessStartInfo Command(Installation game, Preferences p, Locale locale, bool experimental, bool dark, Hardware hardware) {
         string cli = Path.Combine(Base,"kelvaroq-cli.exe");
         if (!File.Exists(cli) && Files.Names.Equals(Path.GetFileName(Environment.GetEnvironmentVariable("VICTORY_LAUNCHER_EXE")),"kelvaroq-launcher.exe"))
             cli = Path.Combine(Base,"kelvaroq.exe");
         if (!File.Exists(cli) || !File.Exists(EngineIn(Path.Combine(Base,"native")))) throw new Problem("engineMissing");
         var start = new ProcessStartInfo(cli,"play " + (experimental ? "--experimental-render " : "") + "-- \"" + game.Image + "\"") {
             UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true, WorkingDirectory = Base };
-        Configure(start,game,p,locale,dark);
+        Configure(start,game,p,locale,dark,hardware);
         return start;
     }
-    internal static void Configure(ProcessStartInfo start,Installation game,Preferences p,Locale locale,bool dark) {
+    internal static void Configure(ProcessStartInfo start,Installation game,Preferences p,Locale locale,bool dark,Hardware hardware = null) {
+        ProfileRule.Apply(start,hardware,p);
         start.EnvironmentVariables["KELVAROQ_DESKTOP_LOG"] = "1";
         start.EnvironmentVariables["VICTORY_LAUNCHER_UI"] = "1";
         start.EnvironmentVariables["VICTORY_GAME_DIR"] = game.Root;

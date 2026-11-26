@@ -1,4 +1,6 @@
 #[cfg(windows)]
+mod adapters;
+#[cfg(windows)]
 mod desktop;
 #[cfg(windows)]
 mod monitor;
