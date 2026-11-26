@@ -1,4 +1,8 @@
-<img src="assets/logo.png" alt="Kelvaroq logo" width="112">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/hero-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="assets/readme/hero-light.svg">
+  <img src="assets/readme/hero-light.svg" alt="Kelvaroq: Xbox Series compatibility runtime for Windows, written in Rust on DirectX 12">
+</picture>
 
 # Kelvaroq
 
@@ -10,7 +14,30 @@ Kelvaroq is an Xbox Series X|S compatibility runtime for Windows x64, written in
 >
 > **Ranked #1 of 44 projects** on an independent public tracker of PC compatibility efforts for this console title (check of 25 November 2026, 21:02 UTC): furthest along, two steps short of its "playable" bar of 20 fps and 30 minutes without a crash.
 
+## The wall every project hits
+
+A console game is native x64 code: it runs on a PC processor as it is. We measured it. With nothing drawn, the game's own code holds a locked **30 fps** in its heaviest prologue scene on our test PC (5,331 heavy frames, 99th percentile 33.9 ms). Draw the same scene through a compatibility layer and it takes about **130 ms** a frame.
+
+Those extra 100 ms are not the game, and they are not the GPU, which sits idle most of the frame. About two thirds of them go to keeping two copies of memory in sync, every frame: watch the pages, copy what changed up to the GPU, copy what the GPU wrote back. The Xbox has one memory. A PC has two.
+
+Every public project we have measured on the same machine is built on that copy loop, and most of them keep iterating on it: AI-generated switch sets, more threads, one more patch to the copy path. Each pass moves a few milliseconds, breaks something else, and the open world still runs at 2 to 12 fps. A loop that should not exist cannot be tuned away.
+
+We traced how the game really uses its memory, from the first instruction of the process to the open world, and found why the earlier attempts to remove the loop failed. The blocker was never the game.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/memory-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="assets/readme/memory-light.svg">
+  <img src="assets/readme/memory-light.svg" alt="Simplified view: the usual approach copies the game's memory to the GPU and back every frame; Kelvaroq gives the GPU the game's memory as the console does. The implementation is not published yet.">
+</picture>
+
+## Where this is going
+
+- **Goal:** the game runs from boot to credits exactly as it does on an Xbox Series X, with what a PC adds on top: DLSS super resolution, frame generation, higher resolutions and an unlocked frame rate.
+- **Release policy:** the next public pushes will land once the memory layer is validated in game, DLSS and frame generation are integrated, the remaining visual effects are in place, and every test suite passes. Until then, this repository publishes measured results, not the implementation.
+
 ## Status
+
+The figures below are those of the current public build.
 
 **The prologue is playable at about 10 rendered fps in typical views and 7 to 8 fps in its heaviest scenes.** All measurements below are from the prologue at 3840×2160 on an RTX 5080. A heavy frame is a present with at least 3,000 draws.
 
@@ -77,11 +104,13 @@ A tester played a build from this public repository and monitored it, on a Ryzen
 - [x] Copy game memory in place instead of through the kernel (patch 0044): 7–12% less frame time at 5,000 draws and more; frame-time spikes over one second are gone.
 - [x] Ask Windows for changed pages once per reservation and submission (patch 0045): heavy-frame median 129 → 110 ms in an A/B.
 - [x] Present asynchronously, at most two frames ahead (patches 0046, 0048): the game no longer waits in present; p95 568 → 262 ms.
-- [ ] Spread the submitting thread's work (about 86 ms per heavy frame) over several threads: it is now the only critical path. *Next.*
+- [x] Shader preloading screen in the launcher, and a live performance monitor (`Kelvaroq.exe --monitor`).
+- [ ] Remove the memory synchronisation that costs about two thirds of every heavy frame. *In progress, not public yet.*
 - [ ] Run 64-lane compute shaders on 32-lane GPUs, and build ray-tracing structures (about 515 dropped draws per frame).
 - [ ] Address the remaining ~1,400 clamped indirect calls per frame across non-mesh draws and compute dispatches.
 - [ ] Address the VRAM budget and missing host pipelines.
-- [ ] Reach 30 rendered fps in the heavy prologue scene.
+- [ ] DLSS super resolution and frame generation on NVIDIA RTX GPUs.
+- [ ] Reach 30 rendered fps in the heavy prologue scene, then the whole game from boot to credits.
 
 ## Play (Windows package)
 
@@ -148,6 +177,12 @@ These documents are written in French.
 - [Architecture, compatibility criteria and measurement protocol](documentation.md)
 - [Decompilation notes on the binary, addresses and reproducible stop](décompile.md)
 - [Contribution guidelines for building, reviewing and testing changes](CONTRIBUTING.md)
+
+## Contributing
+
+Contributions are welcome here: open an issue or a pull request against this repository. Please contribute upstream instead of republishing copies of the code. Split efforts are what keep every project in this space at a few frames per second.
+
+Kelvaroq is free software under the GPL-3.0-or-later, and that licence allows forks. It does not cover the **Kelvaroq name and logo**: a fork or a redistributed build must not use them, nor present itself as an official Kelvaroq release. Official builds come only from this repository and from Stellarr Studio SAS.
 
 ## Credits
 
