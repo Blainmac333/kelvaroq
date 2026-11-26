@@ -10,6 +10,9 @@
 
 Kelvaroq is an Xbox Series X|S compatibility runtime for Windows x64, written in Rust. Its native engine is built on VIctory and victory-fork. The goal is a playable scene at 3840×2160 and 30 rendered fps, with correct textures and steady frame pacing on NVIDIA and AMD GPUs.
 
+> [!IMPORTANT]
+> **You need your own copy of the game.** Kelvaroq contains and distributes no game files, no game code, no assets, no keys and no download links. It only runs a game that you own and that you installed yourself from your own lawful copy. We do not help anyone obtain a game: requests for game files, keys, dumps or download links are refused and removed, on GitHub and on Discord.
+
 > **Built entirely with [Moon AI](https://realmoon.ai).** All of the code, the research, the reverse-engineering notes, the measurements and the documentation in this project are produced with the Moon AI platform. Kelvaroq is developed by [Stellarr Studio SAS](https://stellarrstudio.com).
 >
 > [![Join the Kelvaroq Discord](https://img.shields.io/badge/Join%20the%20Discord-follow%20every%20announcement%20live-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/5Hvk5RFB3D)
@@ -120,6 +123,8 @@ A tester played a build from this public repository and monitored it, on a Ryzen
 - [ ] Reach 30 rendered fps in the heavy prologue scene, then the whole game from boot to credits.
 
 ## Play (Windows package)
+
+**Before you start:** you need a game you own, installed from your own lawful copy. Kelvaroq does not include, download or unlock any game.
 
 1. Extract the entire Windows x64 ZIP into a folder.
 2. Open **Kelvaroq.exe** and select the game folder or its executable. You can also drag either onto Kelvaroq.exe.
@@ -259,7 +264,9 @@ The Windows package includes the native engine source in `sources/native.zip` an
 
 ## Disclaimer
 
-This repository contains no game files, game code or game assets. You supply the game from your own copy. Kelvaroq is not affiliated with or endorsed by any game developer or publisher.
+This repository contains no game files, game code, game assets, encryption keys or links to them. You supply the game from your own lawfully obtained copy; Kelvaroq does not decrypt, download or unlock games and does not bypass any copy protection. Kelvaroq is not affiliated with or endorsed by any console maker, game developer or publisher. All trademarks belong to their owners.
+
+Issues, pull requests and Discord messages that share or ask for game files, keys, dumps or download links are removed, and their authors may be banned.
 
 ## Legal Notice — Software Interoperability and European Union Law
 
@@ -310,6 +317,8 @@ All third-party trademarks and intellectual property remain the property of thei
 Rights holders who believe that specific repository content infringes their intellectual property rights are invited to identify the relevant files, code sections, protected works, and legal grounds for their claim through the project's designated contact channel ([stellarrstudio.com](https://stellarrstudio.com)).
 
 The maintainers are committed to reviewing legitimate intellectual property concerns in good faith while reserving all rights and statutory exceptions available under applicable law.
+
+Takedown notices, including notices under the U.S. Digital Millennium Copyright Act (DMCA), can be sent to Stellarr Studio SAS through [stellarrstudio.com](https://stellarrstudio.com) or through GitHub's own process. Please contact us first: we review every notice promptly and remove any content that turns out to belong to a third party.
 
 Nothing in this notice is intended to exclude applicable laws or confer rights beyond those recognized by the relevant jurisdiction.
 
