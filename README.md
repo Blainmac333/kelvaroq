@@ -34,6 +34,7 @@ Kelvaroq is an Xbox Series X|S compatibility runtime for Windows x64, written in
 - **121 million** descriptor rows checked against recorded real gameplay, with **zero errors**.
 - **300× less** memory bookkeeping per heavy frame on real gameplay: **~18 s → ~60 ms** on an RTX 5080.
 - **0 GB** left behind when the game closes, down from about 19 GB per session, with a clean shutdown in about one second.
+- **Native DirectX 12 ray tracing (DXR)** is now implemented and working: the game's ray-tracing structures are built and traced through DXR on the GPU.
 
 The unified memory layer is **in testing** and goes public as soon as the build is stable and clean. Follow it live on [Discord](https://discord.gg/5Hvk5RFB3D).
 
@@ -71,7 +72,7 @@ The figures below are those of the current public build.
 
 Verified in play: the menus work, the character can be controlled, the HUD is shown, the game pauses, and sessions have run without a crash.
 
-Patches 0041–0042 cut median heavy-frame time from 198.3 to 119.8 ms, and patches 0044–0048 to 108.5 ms. The thread that prepares and submits GPU work now limits heavy frames: the GPU waits for it. About 7% of draws are still dropped, mostly because ray-tracing structures are not built yet. Textures wait for space when VRAM is full.
+Patches 0041–0042 cut median heavy-frame time from 198.3 to 119.8 ms, and patches 0044–0048 to 108.5 ms. The thread that prepares and submits GPU work now limits heavy frames: the GPU waits for it. About 7% of draws are still dropped in this public build, mostly because ray-tracing structures are not built yet; native DirectX 12 ray tracing (DXR) is now implemented and working in the build under test. Textures wait for space when VRAM is full.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/charts/milestones-dark.svg">
@@ -134,7 +135,8 @@ A tester played a build from this public repository and monitored it, on a Ryzen
 - [x] Present asynchronously, at most two frames ahead (patches 0046, 0048): the game no longer waits in present; p95 568 → 262 ms.
 - [x] Shader preloading screen in the launcher, and a live performance monitor (`Kelvaroq.exe --monitor`).
 - [ ] Remove the memory synchronisation that costs about two thirds of every heavy frame. *In testing: copies per frame down from over 100 MB to under 8 MB in the first scenes.*
-- [ ] Run 64-lane compute shaders on 32-lane GPUs, and build ray-tracing structures (about 515 dropped draws per frame).
+- [x] Native DirectX 12 ray tracing (DXR): ray-tracing structures are built and traced on the GPU, which removes the draws previously dropped for lack of them (about 515 per frame). Implemented and working in the build under test.
+- [ ] Run 64-lane compute shaders on 32-lane GPUs.
 - [ ] Address the remaining ~1,400 clamped indirect calls per frame across non-mesh draws and compute dispatches.
 - [ ] Address the VRAM budget and missing host pipelines.
 - [ ] DLSS super resolution and frame generation on NVIDIA RTX GPUs.
