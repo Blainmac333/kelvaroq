@@ -6,11 +6,13 @@
 
 # Kelvaroq
 
-![License](https://img.shields.io/github/license/fablinoo/kelvaroq) ![Platform: Windows x64](https://img.shields.io/badge/platform-Windows%20x64-lightgrey) ![Language: Rust](https://img.shields.io/badge/language-Rust-orange) ![Status: playable · ~10 fps](https://img.shields.io/badge/status-playable%20%C2%B7%20~10%20fps-green) ![Target: 30 fps @ 3840×2160](https://img.shields.io/badge/target-30%20fps%20%40%203840%C3%972160-blue) ![Tested on RTX 5080](https://img.shields.io/badge/tested%20on-RTX%205080-lightgrey) [![Built with Moon AI](https://img.shields.io/badge/built%20with-Moon%20AI-7c3aed)](https://realmoon.ai) ![Ranked #1 on a public tracker](https://img.shields.io/badge/public%20tracker-%231%20of%2044-gold)
+[![Discord: live updates](https://img.shields.io/badge/Discord-live%20updates-5865F2?logo=discord&logoColor=white)](https://discord.gg/5Hvk5RFB3D) ![License](https://img.shields.io/github/license/fablinoo/kelvaroq) ![Platform: Windows x64](https://img.shields.io/badge/platform-Windows%20x64-lightgrey) ![Language: Rust](https://img.shields.io/badge/language-Rust-orange) ![Status: playable · ~10 fps](https://img.shields.io/badge/status-playable%20%C2%B7%20~10%20fps-green) ![Target: 30 fps @ 3840×2160](https://img.shields.io/badge/target-30%20fps%20%40%203840%C3%972160-blue) ![Tested on RTX 5080](https://img.shields.io/badge/tested%20on-RTX%205080-lightgrey) [![Built with Moon AI](https://img.shields.io/badge/built%20with-Moon%20AI-7c3aed)](https://realmoon.ai) ![Ranked #1 on a public tracker](https://img.shields.io/badge/public%20tracker-%231%20of%2044-gold)
 
 Kelvaroq is an Xbox Series X|S compatibility runtime for Windows x64, written in Rust. Its native engine is built on VIctory and victory-fork. The goal is a playable scene at 3840×2160 and 30 rendered fps, with correct textures and steady frame pacing on NVIDIA and AMD GPUs.
 
 > **Built entirely with [Moon AI](https://realmoon.ai).** All of the code, the research, the reverse-engineering notes, the measurements and the documentation in this project are produced with the Moon AI platform. Kelvaroq is developed by [Stellarr Studio SAS](https://stellarrstudio.com).
+>
+> [![Join the Kelvaroq Discord](https://img.shields.io/badge/Join%20the%20Discord-follow%20every%20announcement%20live-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/5Hvk5RFB3D)
 >
 > **Ranked #1 of 44 projects** on an independent public tracker of PC compatibility efforts for this console title (check of 25 November 2026, 21:02 UTC): furthest along, two steps short of its "playable" bar of 20 fps and 30 minutes without a crash.
 
@@ -26,6 +28,8 @@ We traced how the game really uses its memory, from the first instruction of the
 
 **Kelvaroq's memory layer is in testing now, and the first results are wild:** in the first scenes we tested, the memory copied every frame fell from over 100 MB to under 8 MB. We are tuning it for the open world before it ships.
 
+**Update, 26 November 2026: the memory layer now runs in the open world.** In a live test session, the GPU found more than half of the memory it needed, about 64 million of 115 million lookups, directly in the game's own memory instead of a copy; earlier the same day, it found none. What is left is speed: on recorded game data, the work this takes per frame has fallen from about 6 seconds to between 0.17 and 0.35 seconds, and the target is **5 ms per frame**. It is in testing now and goes public as soon as the build is stable and clean. Follow it live on [Discord](https://discord.gg/5Hvk5RFB3D).
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/memory-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="assets/readme/memory-light.svg">
@@ -36,7 +40,7 @@ We traced how the game really uses its memory, from the first instruction of the
 
 - **Goal:** the game runs from boot to credits exactly as it does on an Xbox Series X, with what a PC adds on top: DLSS super resolution, frame generation, higher resolutions and an unlocked frame rate.
 - **Modest PCs too:** the copy loop is what eats the processor today, and that is what shuts smaller machines out. Removing it lowers the bar for everyone, so the aim is a game that also runs well on mid-range and older PCs, not only on high-end ones. Minimum requirements will be published once they are measured.
-- **Release policy:** the next public engine changes will land once the memory layer is validated across the whole game, DLSS and frame generation are integrated, the remaining visual effects are in place, and every test suite passes. Until then, the public build stays on the current engine while the new layer is tested.
+- **Release policy:** the memory layer goes public as soon as its build is stable and clean and every test suite passes. DLSS, frame generation and the remaining visual effects follow. Until then, the public build stays on the current engine while the new layer is tested.
 
 ## Status
 
@@ -221,6 +225,12 @@ These documents are written in French.
 
 - [Architecture, compatibility criteria and measurement protocol](documentation.md)
 - [Contribution guidelines for building, reviewing and testing changes](CONTRIBUTING.md)
+
+## Community
+
+Announcements, test results and new builds are posted first on the Kelvaroq Discord.
+
+[![Join the Kelvaroq Discord](https://img.shields.io/badge/Discord-join%20the%20server-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/5Hvk5RFB3D)
 
 ## Contributing
 
