@@ -35,6 +35,7 @@ We traced how the game really uses its memory, from the first instruction of the
 ## Where this is going
 
 - **Goal:** the game runs from boot to credits exactly as it does on an Xbox Series X, with what a PC adds on top: DLSS super resolution, frame generation, higher resolutions and an unlocked frame rate.
+- **Modest PCs too:** the copy loop is what eats the processor today, and that is what shuts smaller machines out. Removing it lowers the bar for everyone, so the aim is a game that also runs well on mid-range and older PCs, not only on high-end ones. Minimum requirements will be published once they are measured.
 - **Release policy:** the next public pushes will land once the memory layer is validated across the whole game, DLSS and frame generation are integrated, the remaining visual effects are in place, and every test suite passes. Until then, the public build stays on the current engine while the new layer is tested.
 
 ## Status
