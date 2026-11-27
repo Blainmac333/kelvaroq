@@ -6,7 +6,7 @@
 
 # Kelvaroq
 
-[![Discord: live updates](https://img.shields.io/badge/Discord-live%20updates-5865F2?logo=discord&logoColor=white)](https://discord.gg/5Hvk5RFB3D) ![License](https://img.shields.io/github/license/stellarr-studio/kelvaroq) ![Platform: Windows x64](https://img.shields.io/badge/platform-Windows%20x64-lightgrey) ![Language: Rust](https://img.shields.io/badge/language-Rust-orange) ![Status: playable · ~10 fps](https://img.shields.io/badge/status-playable%20%C2%B7%20~10%20fps-green) ![Target: 30 fps @ 3840×2160](https://img.shields.io/badge/target-30%20fps%20%40%203840%C3%972160-blue) ![Tested on RTX 5080](https://img.shields.io/badge/tested%20on-RTX%205080-lightgrey) [![Built with Moon AI](https://img.shields.io/badge/built%20with-Moon%20AI-7c3aed)](https://realmoon.ai) ![Ranked #1 on a public tracker](https://img.shields.io/badge/public%20tracker-%231%20of%2044-gold)
+[![Discord: live updates](https://img.shields.io/badge/Discord-live%20updates-5865F2?logo=discord&logoColor=white)](https://discord.gg/5Hvk5RFB3D) ![License](https://img.shields.io/github/license/stellarr-studio/kelvaroq) ![Platform: Windows x64](https://img.shields.io/badge/platform-Windows%20x64-lightgrey) ![Language: Rust](https://img.shields.io/badge/language-Rust-orange) ![Status: playable · ~10 fps](https://img.shields.io/badge/status-playable%20%C2%B7%20~10%20fps-green) ![In testing: ~30 fps open world](https://img.shields.io/badge/in%20testing-~30%20fps%20open%20world-brightgreen) ![Target: 30 fps @ 3840×2160](https://img.shields.io/badge/target-30%20fps%20%40%203840%C3%972160-blue) ![Tested on RTX 5080](https://img.shields.io/badge/tested%20on-RTX%205080-lightgrey) [![Built with Moon AI](https://img.shields.io/badge/built%20with-Moon%20AI-7c3aed)](https://realmoon.ai) ![Ranked #1 on a public tracker](https://img.shields.io/badge/public%20tracker-%231%20of%2044-gold)
 
 Kelvaroq is an Xbox Series X|S compatibility runtime for Windows x64, written in Rust. Its native engine is built on VIctory and victory-fork. The goal is a playable scene at 3840×2160 and 30 rendered fps, with correct textures and steady frame pacing on NVIDIA and AMD GPUs.
 
@@ -24,19 +24,20 @@ Kelvaroq is an Xbox Series X|S compatibility runtime for Windows x64, written in
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/highlights-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="assets/readme/highlights-light.svg">
-  <img src="assets/readme/highlights-light.svg" alt="Unified memory, in testing: 100% of the game's graphics memory shared with the GPU from allocation; 97.4% of GPU memory views fit directly in shared memory; 64 million GPU lookups served with no copy in one live session; 121 million descriptor rows checked against real gameplay with zero errors; 300 times less memory bookkeeping per heavy frame (about 18 s to about 60 ms on an RTX 5080); 0 GB left behind after closing the game, down from about 19 GB.">
+  <img src="assets/readme/highlights-light.svg" alt="Unified memory, in testing: about 30 fps in the open world on first stretches (35 ms a frame over 100 frames on an RTX 5080); 22 ms of GPU work per open-world frame with the game\'s data in video memory; 4 times faster than the copy loop; 3,000 times less memory bookkeeping per frame; 42 seconds from launch to the open world; 121 million descriptor rows checked with zero errors.">
 </picture>
 
-- **100%** of the game's graphics memory is shared with the GPU from the moment it is allocated.
-- **97.4%** of the GPU's memory views fit directly in that shared memory, measured on real gameplay.
-- **64 million** GPU lookups served straight from the game's memory, with no copy, in one live session. That morning: zero.
-- **Translate once, like the console:** each GPU descriptor is now translated once, when the game writes it, instead of being re-sorted on every submission. Per-submission work dropped **under 1 ms**.
+- **~30 fps in the open world:** on its first open-world stretches, the new path runs at **35 ms a frame over 100 frames** on an RTX 5080, against about 29 seconds a frame on the same path two days ago.
+- **22 ms of GPU work** per open-world frame once the game's data lives in video memory: the graphics card has room to spare for 30 fps.
+- **4× faster than the copy loop:** the classic approach, which copies memory back and forth every frame, needs about 140 ms per open-world frame on the same machine.
+- **The game's memory lives on the GPU, like on the console:** GPU memory sits in video memory behind the card's own page tables, aliases included, and only the pages the processor actually touches move between the two.
+- **3,000× less** memory bookkeeping per frame on recorded gameplay: **~18 s → ~5 ms**.
+- **42 seconds** from launch to the open world, with loading screens at a locked **30 fps**.
+- **One command list** per game list again, instead of up to three per compute dispatch: driver command memory fell from gigabytes to megabytes in our benchmark.
 - **121 million** descriptor rows checked against recorded real gameplay, with **zero errors**.
-- **300× less** memory bookkeeping per heavy frame on real gameplay: **~18 s → ~60 ms** on an RTX 5080.
-- **0 GB** left behind when the game closes, down from about 19 GB per session, with a clean shutdown in about one second.
-- **Native DirectX 12 ray tracing (DXR)** is now implemented and working: the game's ray-tracing structures are built and traced through DXR on the GPU.
+- **Native DirectX 12 ray tracing (DXR)** is implemented and working: the game's ray-tracing structures are built and traced through DXR on the GPU.
 
-The unified memory layer is **fully functional and in testing**, and the remaining legacy components are being removed. It goes public as soon as the build is stable and clean. Follow it live on [Discord](https://discord.gg/5Hvk5RFB3D).
+The new memory layer is **almost ready**: we are hardening it for long sessions now, and it goes public as soon as the build is stable and clean. Follow it live on [Discord](https://discord.gg/5Hvk5RFB3D).
 
 ## The wall every project hits
 
@@ -51,6 +52,8 @@ We traced how the game really uses its memory, from the first instruction of the
 **Kelvaroq's memory layer is in testing now, and the first results are wild:** in the first scenes we tested, the memory copied every frame fell from over 100 MB to under 8 MB. We are tuning it for the open world before it ships.
 
 **Update, 26 November 2026: the new memory management system is now fully functional.** In a live test session, the GPU found more than half of the memory it needed, about 64 million of 115 million lookups, directly in the game's own memory instead of a copy; earlier the same day, it found none. On recorded game data, translating each descriptor once, when the game writes it, brought the work per heavy frame from about 18 seconds down to about 60 ms, and the target is **5 ms per frame**. We are now removing the remaining components of the legacy system. Native DirectX 12 ray tracing (DXR) is implemented as well. The next priority is performance optimization, with a focus on lower-end hardware. The new layer is in testing and goes public as soon as the build is stable and clean. Follow it live on [Discord](https://discord.gg/5Hvk5RFB3D).
+
+**Update, 27 November 2026: the open world at about 30 fps, reading the game's memory directly.** Overnight we measured the floor: with the game's data in video memory, the graphics card needs only **22 ms** for a full open-world frame. The new layer now gives the GPU the game's memory where the console has it, in video memory behind the card's own page tables, and moves only the pages the processor really touches. On its first open-world stretches it runs at **35 ms a frame** on an RTX 5080, **four times faster** than the copy loop, with the game's real graphics and lighting. We are hardening it for long sessions now; it goes public as soon as the build is stable and clean, and that is close.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/memory-dark.svg">
